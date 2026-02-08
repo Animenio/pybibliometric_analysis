@@ -75,7 +75,20 @@ def ensure_pybliometrics_config(config_dir: Path, api_key_file: Optional[Path] =
 def init_pybliometrics(config_dir: Path, api_key_file: Optional[Path] = None) -> None:
     cfg_path = ensure_pybliometrics_config(config_dir, api_key_file)
     init_func = _resolve_pybliometrics_init()
-    init_func(config_path=str(cfg_path))
+    try:
+        init_func(config_path=str(cfg_path))
+        return
+    except TypeError:
+        pass
+
+    try:
+        init_func(config_dir=str(config_dir))
+        return
+    except TypeError as exc:
+        raise TypeError(
+            "pybliometrics init() does not accept config_path or config_dir. "
+            "Refusing to call without an explicit config to avoid interactive prompts in HOME."
+        ) from exc
 
 
 def _resolve_pybliometrics_init():
