@@ -1,6 +1,7 @@
 .cache/
 __pycache__/
 *.py[cod]
+*.egg-info/
 *.parquet
 data/
 outputs/figures/
