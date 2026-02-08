@@ -13,6 +13,7 @@ SubjectClassifications = .cache/pybliometrics/subjectclassifications
 
 [Authentication]
 APIKey = YOUR_SCOPUS_API_KEY
+InstToken = YOUR_INST_TOKEN_HERE
 
 [Requests]
 Timeout = 20

@@ -1,8 +1,9 @@
-import inspect
 import json
 import os
 import platform
 import subprocess
+from importlib import import_module
+from importlib.util import find_spec
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import metadata
@@ -35,31 +36,54 @@ def generate_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _read_first_token(path: Path) -> Optional[str]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for line in lines:
+        cleaned = line.split("#", 1)[0].strip()
+        if not cleaned:
+            continue
+        return cleaned
+    return None
+
+
 def load_scopus_api_key(api_key_file: Optional[Path]) -> Optional[str]:
     env_key = os.getenv("SCOPUS_API_KEY")
     if env_key:
         return env_key.strip() or None
     if api_key_file and api_key_file.exists():
-        lines = api_key_file.read_text(encoding="utf-8").splitlines()
-        for line in lines:
-            cleaned = line.split("#", 1)[0].strip()
-            if not cleaned:
-                continue
-            if cleaned == "YOUR_SCOPUS_API_KEY_HERE":
-                return None
-            return cleaned
+        cleaned = _read_first_token(api_key_file)
+        if cleaned == "YOUR_SCOPUS_API_KEY_HERE":
+            return None
+        return cleaned
     return None
 
 
-def ensure_pybliometrics_config(config_dir: Path, api_key_file: Optional[Path] = None) -> Path:
+def load_scopus_insttoken(inst_token_file: Optional[Path] = None) -> Optional[str]:
+    env_token = os.getenv("INST_TOKEN") or os.getenv("INSTTOKEN")
+    if env_token:
+        return env_token.strip() or None
+    if inst_token_file and inst_token_file.exists():
+        cleaned = _read_first_token(inst_token_file)
+        if cleaned == "YOUR_INST_TOKEN_HERE":
+            return None
+        return cleaned
+    return None
+
+
+def ensure_pybliometrics_config(
+    config_dir: Path,
+    api_key_file: Optional[Path] = None,
+    inst_token_file: Optional[Path] = None,
+) -> Path:
     config_dir.mkdir(parents=True, exist_ok=True)
     cfg_path = config_dir / "pybliometrics.cfg"
     api_key = load_scopus_api_key(api_key_file)
+    insttoken = load_scopus_insttoken(inst_token_file)
 
     if not cfg_path.exists() and api_key:
         cache_root = (Path.cwd() / ".cache" / "pybliometrics").resolve()
         cache_root.mkdir(parents=True, exist_ok=True)
-        cfg_text = _render_pybliometrics_cfg(cache_root, api_key)
+        cfg_text = _render_pybliometrics_cfg(cache_root, api_key, insttoken)
         cfg_path.write_text(cfg_text, encoding="utf-8")
 
     if not cfg_path.exists() and not api_key:
@@ -72,57 +96,49 @@ def ensure_pybliometrics_config(config_dir: Path, api_key_file: Optional[Path] =
     return cfg_path
 
 
-def init_pybliometrics(config_dir: Path, api_key_file: Optional[Path] = None) -> None:
-    cfg_path = ensure_pybliometrics_config(config_dir, api_key_file)
+def init_pybliometrics(
+    config_dir: Path,
+    api_key_file: Optional[Path] = None,
+    inst_token_file: Optional[Path] = None,
+    logger: Optional[Any] = None,
+) -> None:
+    cfg_path = ensure_pybliometrics_config(config_dir, api_key_file, inst_token_file)
+    if logger:
+        logger.info("Using pybliometrics config: %s", cfg_path)
+        logger.info("Has InstToken: %s", bool(load_scopus_insttoken(inst_token_file)))
+
     init_func = _resolve_pybliometrics_init()
-    
-    # If no init function is available, pybliometrics will auto-load the config file
     if init_func is None:
         return
-    
-    try:
-        init_func(config_path=str(cfg_path))
-        return
-    except TypeError:
-        pass
 
-    try:
-        init_func(config_dir=str(config_dir))
-        return
-    except TypeError as exc:
-        raise TypeError(
-            "pybliometrics init() does not accept config_path or config_dir. "
-            "Refusing to call without an explicit config to avoid interactive prompts in HOME."
-        ) from exc
+    for kwargs in ({"config_path": str(cfg_path)}, {"config_dir": str(config_dir)}):
+        try:
+            init_func(**kwargs)
+            return
+        except TypeError:
+            continue
 
 
 def _resolve_pybliometrics_init():
-    """Resolve the init function across pybliometrics versions.
-    
-    Returns None if no init function is found (pybliometrics will auto-load config file).
-    """
-    try:
-        from pybliometrics.utils import init as pb_init  # type: ignore
-
-        return pb_init
-    except Exception:
-        pass
-
-    try:
-        import pybliometrics  # type: ignore
-
-        pb_init = getattr(pybliometrics, "init", None)
+    """Resolve init() across pybliometrics versions without import-time prompts."""
+    if find_spec("pybliometrics.utils"):
+        utils_mod = import_module("pybliometrics.utils")
+        pb_init = getattr(utils_mod, "init", None)
         if pb_init is not None:
             return pb_init
-    except Exception:
-        pass
+
+    if find_spec("pybliometrics"):
+        pb_mod = import_module("pybliometrics")
+        pb_init = getattr(pb_mod, "init", None)
+        if pb_init is not None:
+            return pb_init
 
     # pybliometrics 3.x may not have an explicit init function
     # and will auto-load the config file, so return None instead of raising
     return None
 
 
-def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
+def _render_pybliometrics_cfg(cache_root: Path, api_key: str, insttoken: Optional[str]) -> str:
     sections = {
         "AbstractRetrieval": cache_root / "abstractretrieval",
         "AffiliationRetrieval": cache_root / "affiliationretrieval",
@@ -143,6 +159,8 @@ def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
     lines.append("")
     lines.append("[Authentication]")
     lines.append(f"APIKey = {api_key}")
+    if insttoken:
+        lines.append(f"InstToken = {insttoken}")
     lines.append("")
     lines.append("[Requests]")
     lines.append("Timeout = 20")

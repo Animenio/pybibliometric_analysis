@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional, TYPE_CHECKING
+
+from pybibliometric_analysis.io_utils import detect_parquet_engine, read_table, write_table
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+
+def _lazy_pandas():
+    import pandas as pd
+
+    return pd
+
+
+def setup_logging(log_path: Path) -> logging.Logger:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("pybibliometric_analysis.clean")
+    logger.setLevel(logging.INFO)
+
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setFormatter(formatter)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    logger.handlers = []
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    return logger
+
+
+def _latest_raw_file(base_dir: Path) -> Path:
+    raw_dir = base_dir / "data" / "raw"
+    candidates = list(raw_dir.glob("scopus_search_*.parquet")) + list(
+        raw_dir.glob("scopus_search_*.csv")
+    )
+    if not candidates:
+        raise FileNotFoundError("No raw scopus_search_* files found in data/raw.")
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def _extract_run_id(path: Path) -> str:
+    name = path.stem
+    if name.startswith("scopus_search_"):
+        return name.replace("scopus_search_", "", 1)
+    if name.startswith("scopus_clean_"):
+        return name.replace("scopus_clean_", "", 1)
+    return name
+
+
+def _coerce_year(value: Optional[str]) -> Optional[int]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) >= 4 and text[:4].isdigit():
+        return int(text[:4])
+    return None
+
+
+def _derive_pub_year(df: "pd.DataFrame") -> "pd.DataFrame":
+    pd = _lazy_pandas()
+    if "pub_year" not in df.columns:
+        df["pub_year"] = pd.NA
+    cover_col = "coverDate" if "coverDate" in df.columns else "cover_date"
+    if cover_col in df.columns:
+        cover_years = df[cover_col].apply(_coerce_year)
+    else:
+        cover_years = pd.Series([None] * len(df))
+    df["pub_year"] = df["pub_year"].fillna(cover_years)
+    return df
+
+
+def _fill_author_names(df: "pd.DataFrame") -> "pd.DataFrame":
+    pd = _lazy_pandas()
+    if "author_names" not in df.columns:
+        df["author_names"] = pd.NA
+    fallback_col = None
+    for candidate in ("creator", "dc:creator"):
+        if candidate in df.columns:
+            fallback_col = candidate
+            break
+    if fallback_col:
+        df["author_names"] = df["author_names"].fillna(df[fallback_col])
+    return df
+
+
+def _normalize_journal(df: "pd.DataFrame") -> "pd.DataFrame":
+    col = None
+    for candidate in ("publicationName", "journal", "sourceTitle"):
+        if candidate in df.columns:
+            col = candidate
+            break
+    if col:
+        df[col] = df[col].astype(str).str.strip()
+    return df
+
+
+def _split_and_count(series: "pd.Series", sep: str = ";") -> "pd.DataFrame":
+    pd = _lazy_pandas()
+    items = []
+    for value in series.dropna().astype(str):
+        parts = [part.strip() for part in value.split(sep) if part.strip()]
+        items.extend(parts)
+    if not items:
+        return pd.DataFrame(columns=["item", "count"])
+    counts = pd.Series(items).value_counts().reset_index()
+    counts.columns = ["item", "count"]
+    return counts
+
+
+def run_clean(
+    *,
+    run_id: Optional[str],
+    base_dir: Path,
+    input_path: Optional[Path],
+    force: bool,
+    write_format: str,
+) -> None:
+    base_dir = base_dir.resolve()
+    log_path = base_dir / "logs" / f"clean_{run_id or 'latest'}.log"
+    logger = setup_logging(log_path)
+
+    if input_path:
+        raw_path = input_path
+    elif run_id:
+        raw_path = base_dir / "data" / "raw" / f"scopus_search_{run_id}.parquet"
+        if not raw_path.exists():
+            raw_path = raw_path.with_suffix(".csv")
+    else:
+        raw_path = _latest_raw_file(base_dir)
+
+    if not raw_path.exists():
+        raise FileNotFoundError(f"Raw file not found: {raw_path}")
+
+    resolved_run_id = run_id or _extract_run_id(raw_path)
+    logger.info("Cleaning run_id=%s input=%s", resolved_run_id, raw_path)
+
+    df = read_table(raw_path)
+    original_rows = len(df)
+
+    if "eid" in df.columns:
+        df = df.drop_duplicates(subset=["eid"])
+    deduped_rows = len(df)
+
+    df = _derive_pub_year(df)
+    df = _fill_author_names(df)
+    df = _normalize_journal(df)
+
+    output_base = base_dir / "data" / "processed" / f"scopus_clean_{resolved_run_id}.parquet"
+    if write_format == "csv":
+        output_base = output_base.with_suffix(".csv")
+
+    if output_base.exists() and not force:
+        raise FileExistsError(f"Output already exists: {output_base}")
+
+    cleaned_path = write_table(df, output_base)
+
+    analysis_dir = base_dir / "outputs" / "analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+
+    pubs_by_year = (
+        df.dropna(subset=["pub_year"])
+        .groupby("pub_year")
+        .size()
+        .reset_index(name="count")
+        .sort_values("pub_year")
+    )
+    pubs_by_year.to_csv(analysis_dir / f"pubs_by_year_{resolved_run_id}.csv", index=False)
+
+    journal_col = next(
+        (c for c in ("publicationName", "journal", "sourceTitle") if c in df.columns),
+        None,
+    )
+    if journal_col:
+        journals = (
+            df[journal_col]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .value_counts()
+            .reset_index()
+        )
+        journals.columns = ["journal", "count"]
+    else:
+        journals = _lazy_pandas().DataFrame(columns=["journal", "count"])
+        logger.warning("Journal column not found; top_journals will be empty.")
+    journals.to_csv(analysis_dir / f"top_journals_{resolved_run_id}.csv", index=False)
+
+    authors = _split_and_count(df["author_names"]) if "author_names" in df.columns else None
+    if authors is None or authors.empty:
+        authors = _lazy_pandas().DataFrame(columns=["item", "count"])
+        logger.warning("Author names missing; top_authors will be empty.")
+    authors.to_csv(analysis_dir / f"top_authors_{resolved_run_id}.csv", index=False)
+
+    keyword_col = next(
+        (c for c in ("authkeywords", "keywords", "author_keywords") if c in df.columns),
+        None,
+    )
+    if keyword_col:
+        keywords = _split_and_count(df[keyword_col])
+    else:
+        keywords = _lazy_pandas().DataFrame(columns=["item", "count"])
+        logger.warning("Keyword column not found; keyword_freq will be empty.")
+    keywords.to_csv(analysis_dir / f"keyword_freq_{resolved_run_id}.csv", index=False)
+
+    manifest = {
+        "timestamp_iso": datetime.now(timezone.utc).isoformat(),
+        "run_id": resolved_run_id,
+        "input_path": str(raw_path),
+        "output_path": str(cleaned_path),
+        "parquet_engine": detect_parquet_engine(),
+        "rows_input": original_rows,
+        "rows_output": deduped_rows,
+        "deduplicated": original_rows - deduped_rows,
+    }
+    manifest_path = base_dir / "outputs" / "methods" / f"cleaning_manifest_{resolved_run_id}.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+    logger.info("Wrote cleaned data to %s", cleaned_path)

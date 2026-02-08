@@ -3,18 +3,16 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from importlib import import_module
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pandas as pd
 
-from pybibliometric_analysis.settings import (
-    build_manifest,
-    init_pybliometrics,
-    load_search_config,
-    write_manifest,
-)
+from pybibliometric_analysis.io_utils import detect_parquet_engine, write_table
+from pybibliometric_analysis.settings import build_manifest, init_pybliometrics, load_search_config, write_manifest
 
 ScopusSearch = None
 
@@ -48,6 +46,7 @@ def run_extract(
     config_path: Path,
     pybliometrics_config_dir: Path,
     scopus_api_key_file: Path,
+    inst_token_file: Optional[Path],
     view: Optional[str],
     force_slicing: bool,
     base_dir: Path = Path("."),
@@ -59,7 +58,12 @@ def run_extract(
         raise FileExistsError(f"Raw dataset already exists: {paths.raw_path}")
 
     logger.info("Initializing pybliometrics configuration")
-    init_pybliometrics(pybliometrics_config_dir, scopus_api_key_file)
+    init_pybliometrics(
+        pybliometrics_config_dir,
+        scopus_api_key_file,
+        inst_token_file=inst_token_file,
+        logger=logger,
+    )
 
     config = load_search_config(config_path)
     logger.info("Loaded search config for database %s", config.database)
@@ -105,8 +109,8 @@ def run_extract(
         logger.warning("No records downloaded for query")
 
     columns_present = list(records.columns)
-    records.to_parquet(paths.raw_path, index=False)
-    logger.info("Saved raw data to %s", paths.raw_path)
+    raw_output_path = write_table(records, paths.raw_path)
+    logger.info("Saved raw data to %s", raw_output_path)
 
     manifest = build_manifest(
         run_id=run_id,
@@ -118,6 +122,8 @@ def run_extract(
         years_covered=years_covered,
         columns_present=columns_present,
     )
+    manifest["raw_output_path"] = str(raw_output_path)
+    manifest["parquet_engine"] = detect_parquet_engine()
     write_manifest(paths.manifest_path, manifest)
     logger.info("Wrote manifest to %s", paths.manifest_path)
 
@@ -200,7 +206,7 @@ def retry_scopus_search(
     *,
     view: Optional[str],
     download: bool = True,
-    subscriber: bool = True,
+    subscriber: bool = False,
     retries: int = 3,
     delay: float = 2.0,
 ) -> Any:
@@ -210,6 +216,7 @@ def retry_scopus_search(
             cls = _get_scopus_search_cls()
             return cls(query, view=view, download=download, subscriber=subscriber)
         except Exception as exc:
+            _raise_actionable_scopus_error(exc)
             last_error = exc
             if attempt < retries - 1:
                 time.sleep(delay)
@@ -231,3 +238,26 @@ def to_frame(records: Iterable[object]) -> pd.DataFrame:
             logger.warning("Unexpected record type %s; passing through to pandas", type(record))
             rows.append(record)
     return pd.DataFrame(rows)
+
+
+def _raise_actionable_scopus_error(exc: Exception) -> None:
+    error_name = exc.__class__.__name__
+    actionable = {
+        "Scopus401Error": "Unauthorized: check SCOPUS_API_KEY and optional INST_TOKEN entitlement.",
+        "Scopus403Error": "Forbidden: verify API key entitlement or add INST_TOKEN if required.",
+        "Scopus429Error": "Rate limited: too many requests; reduce request rate or retry later.",
+    }
+    if error_name in actionable:
+        raise RuntimeError(actionable[error_name]) from exc
+
+    if hasattr(exc, "status_code"):
+        status_code = getattr(exc, "status_code")
+        if status_code in {401, 403, 429}:
+            raise RuntimeError(actionable.get(f"Scopus{status_code}Error", "Scopus API error.")) from exc
+
+    if find_spec("pybliometrics.scopus.exception"):
+        exc_mod = import_module("pybliometrics.scopus.exception")
+        for name, message in actionable.items():
+            exc_cls = getattr(exc_mod, name, None)
+            if exc_cls and isinstance(exc, exc_cls):
+                raise RuntimeError(message) from exc
