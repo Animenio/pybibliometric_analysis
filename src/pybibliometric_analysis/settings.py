@@ -51,15 +51,23 @@ def load_scopus_api_key(api_key_file: Optional[Path]) -> Optional[str]:
     return None
 
 
+def load_scopus_insttoken() -> Optional[str]:
+    env_token = os.getenv("INSTTOKEN")
+    if env_token:
+        return env_token.strip() or None
+    return None
+
+
 def ensure_pybliometrics_config(config_dir: Path, api_key_file: Optional[Path] = None) -> Path:
     config_dir.mkdir(parents=True, exist_ok=True)
     cfg_path = config_dir / "pybliometrics.cfg"
     api_key = load_scopus_api_key(api_key_file)
+    insttoken = load_scopus_insttoken()
 
     if not cfg_path.exists() and api_key:
         cache_root = (Path.cwd() / ".cache" / "pybliometrics").resolve()
         cache_root.mkdir(parents=True, exist_ok=True)
-        cfg_text = _render_pybliometrics_cfg(cache_root, api_key)
+        cfg_text = _render_pybliometrics_cfg(cache_root, api_key, insttoken)
         cfg_path.write_text(cfg_text, encoding="utf-8")
 
     if not cfg_path.exists() and not api_key:
@@ -122,7 +130,7 @@ def _resolve_pybliometrics_init():
     return None
 
 
-def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
+def _render_pybliometrics_cfg(cache_root: Path, api_key: str, insttoken: Optional[str]) -> str:
     sections = {
         "AbstractRetrieval": cache_root / "abstractretrieval",
         "AffiliationRetrieval": cache_root / "affiliationretrieval",
@@ -143,6 +151,8 @@ def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
     lines.append("")
     lines.append("[Authentication]")
     lines.append(f"APIKey = {api_key}")
+    if insttoken:
+        lines.append(f"InstToken = {insttoken}")
     lines.append("")
     lines.append("[Requests]")
     lines.append("Timeout = 20")
