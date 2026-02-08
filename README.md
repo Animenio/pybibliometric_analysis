@@ -5,8 +5,19 @@
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
+
+## Quickstart
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest -q
+```
+
+Running pytest without installing the development dependencies will fail due to missing packages.
 
 ## Setup Scopus API key
 
@@ -35,5 +46,6 @@ python -m pybibliometric_analysis extract --config config/search.yaml \
 ## Tests
 
 ```bash
+pip install -e ".[dev]"
 pytest -q
 ```

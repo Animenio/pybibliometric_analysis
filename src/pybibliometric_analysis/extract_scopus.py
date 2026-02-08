@@ -48,6 +48,24 @@ def run_extract(
     logger.info("Estimated %s results", n_results)
 
     if force_slicing:
+        planned_strategy = "slicing"
+    elif n_results > 5000 and config.use_cursor_preferred:
+        planned_strategy = "cursor"
+    else:
+        planned_strategy = "normal"
+
+    logger.info(
+        "Extract run_id=%s query=%s n_results=%s strategy=%s raw_path=%s manifest_path=%s log_path=%s",
+        run_id,
+        config.query,
+        n_results,
+        planned_strategy,
+        paths.raw_path,
+        paths.manifest_path,
+        paths.log_path,
+    )
+
+    if force_slicing:
         strategy = "slicing"
         records, years_covered = run_slicing(config.query, view)
     elif n_results > 5000 and config.use_cursor_preferred:
@@ -110,7 +128,7 @@ def setup_logging(log_path: Path) -> logging.Logger:
 
 
 def run_standard(query: str, view: Optional[str]) -> pd.DataFrame:
-    search = retry_scopus_search(query, view=view)
+    search = retry_scopus_search(query, view=view, subscriber=True)
     return to_frame(search.results or [])
 
 
@@ -119,7 +137,7 @@ def run_cursor_with_fallback(
     view: Optional[str],
 ) -> Tuple[pd.DataFrame, Optional[List[int]], str]:
     try:
-        cursor_search = retry_scopus_search(query, view=view, cursor=True)
+        cursor_search = retry_scopus_search(query, view=view, subscriber=True)
         results = to_frame(cursor_search.results or [])
         if results.empty:
             raise RuntimeError("Cursor search returned no results")
@@ -136,11 +154,11 @@ def run_slicing(query: str, view: Optional[str]) -> Tuple[pd.DataFrame, List[int
     covered_years = []
     for year in years:
         year_query = f"{query} AND PUBYEAR = {year}"
-        precheck = retry_scopus_search(year_query, view=view, download=False)
+        precheck = retry_scopus_search(year_query, view=view, download=False, subscriber=True)
         if precheck.get_results_size() == 0:
             continue
         covered_years.append(year)
-        results = retry_scopus_search(year_query, view=view)
+        results = retry_scopus_search(year_query, view=view, subscriber=True)
         frames.append(to_frame(results.results or []))
 
     combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
@@ -154,14 +172,14 @@ def retry_scopus_search(
     *,
     view: Optional[str],
     download: bool = True,
-    cursor: bool = False,
+    subscriber: bool = True,
     retries: int = 3,
     delay: float = 2.0,
 ) -> ScopusSearch:
     last_error: Optional[Exception] = None
     for attempt in range(retries):
         try:
-            return ScopusSearch(query, view=view, download=download, cursor=cursor)
+            return ScopusSearch(query, view=view, download=download, subscriber=subscriber)
         except Exception as exc:
             last_error = exc
             if attempt < retries - 1:
@@ -171,5 +189,15 @@ def retry_scopus_search(
     raise RuntimeError("Scopus search failed") from last_error
 
 
-def to_frame(records: Iterable[dict]) -> pd.DataFrame:
-    return pd.DataFrame(list(records))
+def to_frame(records: Iterable[object]) -> pd.DataFrame:
+    logger = logging.getLogger("pybibliometric_analysis")
+    rows = []
+    for record in records:
+        if hasattr(record, "_asdict"):
+            rows.append(record._asdict())
+        elif isinstance(record, dict):
+            rows.append(record)
+        else:
+            logger.warning("Unexpected record type %s; passing through to pandas", type(record))
+            rows.append(record)
+    return pd.DataFrame(rows)
