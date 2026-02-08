@@ -1,20 +1,77 @@
 from collections import namedtuple
 from pathlib import Path
+import pickle
 import sys
 import types
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+force_stub = False
 try:
     import pyarrow  # noqa: F401
 except Exception:
-    stub = types.ModuleType("pyarrow")
-    stub.__version__ = "0.0.0"
-    stub.lib = object()
-    sys.modules["pyarrow"] = stub
-    sys.modules["pyarrow.lib"] = stub
+    force_stub = True
 
-import pandas as pd
+if force_stub:
+    pandas_stub = types.ModuleType("pandas")
+
+    class DataFrame:
+        def __init__(self, rows=None):
+            self._rows = list(rows or [])
+
+        @property
+        def empty(self):
+            return len(self._rows) == 0
+
+        @property
+        def columns(self):
+            if not self._rows:
+                return []
+            if isinstance(self._rows[0], dict):
+                return list(self._rows[0].keys())
+            return []
+
+        def to_parquet(self, path, index=False):
+            with open(path, "wb") as handle:
+                pickle.dump(self._rows, handle)
+
+        def drop_duplicates(self, subset):
+            if not subset:
+                return self
+            seen = set()
+            deduped = []
+            for row in self._rows:
+                if not isinstance(row, dict):
+                    continue
+                key = tuple(row.get(field) for field in subset)
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(row)
+            return DataFrame(deduped)
+
+        def __len__(self):
+            return len(self._rows)
+
+    def concat(frames, ignore_index=False):
+        rows = []
+        for frame in frames:
+            rows.extend(frame._rows)
+        return DataFrame(rows)
+
+    def read_parquet(path):
+        with open(path, "rb") as handle:
+            return DataFrame(pickle.load(handle))
+
+    pandas_stub.DataFrame = DataFrame
+    pandas_stub.concat = concat
+    pandas_stub.read_parquet = read_parquet
+    sys.modules["pandas"] = pandas_stub
+    pd = pandas_stub
+else:
+    import pandas as pd
 
 from pybibliometric_analysis import settings
 from pybibliometric_analysis.extract_scopus import run_extract
@@ -60,6 +117,7 @@ def test_no_overwrite_raw(tmp_path, monkeypatch):
     raw_path = tmp_path / "data" / "raw" / "scopus_search_20200101T000000Z.parquet"
     raw_path.parent.mkdir(parents=True)
     raw_path.write_text("existing", encoding="utf-8")
+    (tmp_path / "logs").mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(
         "pybibliometric_analysis.extract_scopus.build_paths",
