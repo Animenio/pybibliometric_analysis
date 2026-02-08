@@ -29,6 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory containing pybliometrics.cfg",
     )
     extract_parser.add_argument(
+        "--scopus-api-key-file",
+        dest="scopus_api_key_file",
+        default="config/scopus_api_key.txt",
+        help="Path to a local file containing the Scopus API key",
+    )
+    extract_parser.add_argument(
         "--view",
         dest="view",
         default=None,
@@ -54,6 +60,7 @@ def main() -> None:
             run_id=run_id,
             config_path=Path(args.config_path),
             pybliometrics_config_dir=Path(args.pybliometrics_config_dir),
+            scopus_api_key_file=Path(args.scopus_api_key_file),
             view=args.view,
             force_slicing=args.force_slicing,
         )

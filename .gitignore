@@ -7,3 +7,4 @@ outputs/figures/
 outputs/tables/
 logs/
 config/pybliometrics/pybliometrics.cfg
+config/scopus_api_key.txt

@@ -27,6 +27,7 @@ def run_extract(
     run_id: str,
     config_path: Path,
     pybliometrics_config_dir: Path,
+    scopus_api_key_file: Path,
     view: Optional[str],
     force_slicing: bool,
     base_dir: Path = Path("."),
@@ -38,7 +39,7 @@ def run_extract(
         raise FileExistsError(f"Raw dataset already exists: {paths.raw_path}")
 
     logger.info("Initializing pybliometrics configuration")
-    init_pybliometrics(pybliometrics_config_dir)
+    init_pybliometrics(pybliometrics_config_dir, scopus_api_key_file)
 
     config = load_search_config(config_path)
     logger.info("Loaded search config for database %s", config.database)
