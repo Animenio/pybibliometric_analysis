@@ -75,6 +75,11 @@ def ensure_pybliometrics_config(config_dir: Path, api_key_file: Optional[Path] =
 def init_pybliometrics(config_dir: Path, api_key_file: Optional[Path] = None) -> None:
     cfg_path = ensure_pybliometrics_config(config_dir, api_key_file)
     init_func = _resolve_pybliometrics_init()
+    
+    # If no init function is available, pybliometrics will auto-load the config file
+    if init_func is None:
+        return
+    
     try:
         init_func(config_path=str(cfg_path))
         return
@@ -92,7 +97,10 @@ def init_pybliometrics(config_dir: Path, api_key_file: Optional[Path] = None) ->
 
 
 def _resolve_pybliometrics_init():
-    """Resolve the init function across pybliometrics versions."""
+    """Resolve the init function across pybliometrics versions.
+    
+    Returns None if no init function is found (pybliometrics will auto-load config file).
+    """
     try:
         from pybliometrics.utils import init as pb_init  # type: ignore
 
@@ -109,10 +117,9 @@ def _resolve_pybliometrics_init():
     except Exception:
         pass
 
-    raise ImportError(
-        "Cannot resolve pybliometrics init(). Expected pybliometrics.utils.init (v3.x) "
-        "or pybliometrics.init (newer)."
-    )
+    # pybliometrics 3.x may not have an explicit init function
+    # and will auto-load the config file, so return None instead of raising
+    return None
 
 
 def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
