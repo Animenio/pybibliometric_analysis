@@ -1,0 +1,12 @@
+[Directories]
+AbstractRetrieval = .cache/pybliometrics/abstractretrieval
+AffiliationRetrieval = .cache/pybliometrics/affiliationretrieval
+AuthorRetrieval = .cache/pybliometrics/authorretrieval
+CitationOverview = .cache/pybliometrics/citationoverview
+PlumXMetrics = .cache/pybliometrics/plumxmetrics
+ScopusSearch = .cache/pybliometrics/scopussearch
+SerialTitle = .cache/pybliometrics/serialtitle
+SubjectClassifications = .cache/pybliometrics/subjectclassifications
+
+[Authentication]
+APIKey = YOUR_SCOPUS_API_KEY

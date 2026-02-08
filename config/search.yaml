@@ -1,0 +1,4 @@
+query: 'TITLE-ABS-KEY("islamic finance")'
+database: 'Scopus'
+notes: 'no limits'
+use_cursor_preferred: true
