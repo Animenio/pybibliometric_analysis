@@ -1,3 +1,4 @@
+import inspect
 import json
 import os
 import platform
@@ -9,7 +10,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pybliometrics import init
 
 
 @dataclass(frozen=True)
@@ -74,7 +74,62 @@ def ensure_pybliometrics_config(config_dir: Path, api_key_file: Optional[Path] =
 
 def init_pybliometrics(config_dir: Path, api_key_file: Optional[Path] = None) -> None:
     cfg_path = ensure_pybliometrics_config(config_dir, api_key_file)
-    init(config_path=str(cfg_path))
+    init_func = _resolve_pybliometrics_init()
+    _call_init_with_best_effort(init_func, cfg_path)
+
+
+def _resolve_pybliometrics_init():
+    """Resolve the init function across pybliometrics versions."""
+    try:
+        import pybliometrics  # type: ignore
+
+        if hasattr(pybliometrics, "init"):
+            return getattr(pybliometrics, "init")
+    except Exception:
+        pass
+
+    try:
+        from pybliometrics.scopus import init as scopus_init  # type: ignore
+
+        return scopus_init
+    except Exception:
+        try:
+            from pybliometrics.scopus.utils import init as scopus_init  # type: ignore
+
+            return scopus_init
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not locate a compatible pybliometrics init() function. "
+                "Check your pybliometrics installation/version."
+            ) from exc
+
+
+def _call_init_with_best_effort(init_func, cfg_path: Path) -> None:
+    """Call init() using the best available parameter for this version."""
+    try:
+        params = inspect.signature(init_func).parameters
+    except Exception:
+        params = {}
+
+    if "config_path" in params:
+        init_func(config_path=str(cfg_path))
+        return
+    if "config_dir" in params:
+        init_func(config_dir=str(cfg_path.parent))
+        return
+
+    try:
+        init_func(config_path=str(cfg_path))
+        return
+    except TypeError:
+        pass
+    try:
+        init_func(config_dir=str(cfg_path.parent))
+        return
+    except TypeError:
+        pass
+
+    init_func()
 
 
 def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
