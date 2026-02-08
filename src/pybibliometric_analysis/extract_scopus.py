@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Any, Iterable, List, Optional, Tuple, TYPE_CHECKING
 
-import pandas as pd
-from typing import Any
+if TYPE_CHECKING:
+    import pandas as pd
 
 from pybibliometric_analysis.settings import (
     build_manifest,
@@ -25,6 +27,12 @@ def _get_scopus_search_cls() -> Any:
 
     ScopusSearch = _ScopusSearch
     return ScopusSearch
+
+
+def _lazy_pandas():
+    import pandas as pd
+
+    return pd
 
 
 @dataclass
@@ -127,6 +135,7 @@ def build_paths(base_dir: Path, run_id: str) -> ExtractPaths:
 
 
 def setup_logging(log_path: Path) -> logging.Logger:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("pybibliometric_analysis")
     logger.setLevel(logging.INFO)
 
@@ -166,6 +175,7 @@ def run_cursor_with_fallback(
 
 
 def run_slicing(query: str, view: Optional[str]) -> Tuple[pd.DataFrame, List[int]]:
+    pd = _lazy_pandas()
     current_year = time.gmtime().tm_year
     years = list(range(1900, current_year + 1))
     frames = []
@@ -209,6 +219,7 @@ def retry_scopus_search(
 
 
 def to_frame(records: Iterable[object]) -> pd.DataFrame:
+    pd = _lazy_pandas()
     logger = logging.getLogger("pybibliometric_analysis")
     rows = []
     for record in records:
