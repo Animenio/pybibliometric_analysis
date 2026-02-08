@@ -68,7 +68,7 @@ def run_extract(
         config.query,
         view=view,
         download=False,
-        subscriber=True,
+        subscriber=False,
     )
     n_results = estimate_search.get_results_size()
     logger.info("Estimated %s results", n_results)
@@ -155,7 +155,7 @@ def setup_logging(log_path: Path) -> logging.Logger:
 
 
 def run_standard(query: str, view: Optional[str]) -> pd.DataFrame:
-    search = retry_scopus_search(query, view=view, subscriber=True)
+    search = retry_scopus_search(query, view=view, subscriber=False)
     return to_frame(search.results or [])
 
 
