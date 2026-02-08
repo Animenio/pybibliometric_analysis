@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pybliometrics import init
 
 
 @dataclass(frozen=True)
@@ -35,10 +34,26 @@ def generate_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def ensure_pybliometrics_config(config_dir: Path) -> Path:
+def load_scopus_api_key(api_key_file: Optional[Path]) -> Optional[str]:
+    env_key = os.getenv("SCOPUS_API_KEY")
+    if env_key:
+        return env_key.strip() or None
+    if api_key_file and api_key_file.exists():
+        lines = api_key_file.read_text(encoding="utf-8").splitlines()
+        for line in lines:
+            cleaned = line.split("#", 1)[0].strip()
+            if not cleaned:
+                continue
+            if cleaned == "YOUR_SCOPUS_API_KEY_HERE":
+                return None
+            return cleaned
+    return None
+
+
+def ensure_pybliometrics_config(config_dir: Path, api_key_file: Optional[Path] = None) -> Path:
     config_dir.mkdir(parents=True, exist_ok=True)
     cfg_path = config_dir / "pybliometrics.cfg"
-    api_key = os.getenv("SCOPUS_API_KEY")
+    api_key = load_scopus_api_key(api_key_file)
 
     if not cfg_path.exists() and api_key:
         cache_root = (Path.cwd() / ".cache" / "pybliometrics").resolve()
@@ -48,28 +63,56 @@ def ensure_pybliometrics_config(config_dir: Path) -> Path:
 
     if not cfg_path.exists() and not api_key:
         raise RuntimeError(
-            "SCOPUS_API_KEY is not set and config/pybliometrics/pybliometrics.cfg is missing. "
-            "Set the SCOPUS_API_KEY environment variable or create the config file. "
+            f"SCOPUS_API_KEY is not set and {cfg_path} is missing. "
+            "Set the SCOPUS_API_KEY environment variable, provide a key file, or create the config file. "
             "See config/pybliometrics/pybliometrics.cfg.example for reference."
         )
 
     return cfg_path
 
 
-def init_pybliometrics(config_dir: Path) -> None:
-    cfg_path = ensure_pybliometrics_config(config_dir)
-    init(config_path=str(cfg_path))
+def init_pybliometrics(config_dir: Path, api_key_file: Optional[Path] = None) -> None:
+    cfg_path = ensure_pybliometrics_config(config_dir, api_key_file)
+    init_func = _resolve_pybliometrics_init()
+    init_func(config_path=str(cfg_path))
+
+
+def _resolve_pybliometrics_init():
+    """Resolve the init function across pybliometrics versions."""
+    try:
+        from pybliometrics.utils import init as pb_init  # type: ignore
+
+        return pb_init
+    except Exception:
+        pass
+
+    try:
+        import pybliometrics  # type: ignore
+
+        pb_init = getattr(pybliometrics, "init", None)
+        if pb_init is not None:
+            return pb_init
+    except Exception:
+        pass
+
+    raise ImportError(
+        "Cannot resolve pybliometrics init(). Expected pybliometrics.utils.init (v3.x) "
+        "or pybliometrics.init (newer)."
+    )
 
 
 def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
     sections = {
         "AbstractRetrieval": cache_root / "abstractretrieval",
         "AffiliationRetrieval": cache_root / "affiliationretrieval",
+        "AffiliationSearch": cache_root / "affiliationsearch",
         "AuthorRetrieval": cache_root / "authorretrieval",
+        "AuthorSearch": cache_root / "authorsearch",
         "CitationOverview": cache_root / "citationoverview",
         "PlumXMetrics": cache_root / "plumxmetrics",
         "ScopusSearch": cache_root / "scopussearch",
-        "SerialTitle": cache_root / "serialtitle",
+        "SerialTitleSearch": cache_root / "serialtitlesearch",
+        "SerialTitleISSN": cache_root / "serialtitleissn",
         "SubjectClassifications": cache_root / "subjectclassifications",
     }
     lines = ["[Directories]"]
@@ -79,6 +122,10 @@ def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
     lines.append("")
     lines.append("[Authentication]")
     lines.append(f"APIKey = {api_key}")
+    lines.append("")
+    lines.append("[Requests]")
+    lines.append("Timeout = 20")
+    lines.append("Retries = 5")
     lines.append("")
     return "\n".join(lines)
 
