@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 import pandas as pd
-from pybliometrics.scopus import ScopusSearch
+from typing import Any
 
 from pybibliometric_analysis.settings import (
     build_manifest,
@@ -13,6 +13,18 @@ from pybibliometric_analysis.settings import (
     load_search_config,
     write_manifest,
 )
+
+ScopusSearch = None
+
+
+def _get_scopus_search_cls() -> Any:
+    global ScopusSearch
+    if ScopusSearch is not None:
+        return ScopusSearch
+    from pybliometrics.scopus import ScopusSearch as _ScopusSearch
+
+    ScopusSearch = _ScopusSearch
+    return ScopusSearch
 
 
 @dataclass
@@ -44,7 +56,12 @@ def run_extract(
     config = load_search_config(config_path)
     logger.info("Loaded search config for database %s", config.database)
 
-    estimate_search = ScopusSearch(config.query, download=False)
+    estimate_search = retry_scopus_search(
+        config.query,
+        view=view,
+        download=False,
+        subscriber=True,
+    )
     n_results = estimate_search.get_results_size()
     logger.info("Estimated %s results", n_results)
 
@@ -176,11 +193,12 @@ def retry_scopus_search(
     subscriber: bool = True,
     retries: int = 3,
     delay: float = 2.0,
-) -> ScopusSearch:
+) -> Any:
     last_error: Optional[Exception] = None
     for attempt in range(retries):
         try:
-            return ScopusSearch(query, view=view, download=download, subscriber=subscriber)
+            cls = _get_scopus_search_cls()
+            return cls(query, view=view, download=download, subscriber=subscriber)
         except Exception as exc:
             last_error = exc
             if attempt < retries - 1:

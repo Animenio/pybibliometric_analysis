@@ -117,11 +117,6 @@ def test_extract_uses_mocked_scopus(monkeypatch, tmp_path):
         "pybibliometric_analysis.extract_scopus.init_pybliometrics",
         lambda *_args, **_kwargs: None,
     )
-    monkeypatch.setattr(
-        pd.DataFrame,
-        "to_parquet",
-        lambda self, path, index=False: self.to_pickle(path),
-    )
 
     run_extract(
         run_id="20200101T000000Z",
