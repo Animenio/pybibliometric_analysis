@@ -5,8 +5,19 @@
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
+
+## Quickstart
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest -q
+```
+
+Running pytest without installing the development dependencies will fail due to missing packages.
 
 ## Setup Scopus API key
 
@@ -22,6 +33,14 @@ pip install -e .
    export SCOPUS_API_KEY="your-api-key"
    ```
 
+3. Alternatively, store the key in a local text file:
+
+   ```bash
+   cp config/scopus_api_key.txt.example config/scopus_api_key.txt
+   ```
+
+   Then replace the placeholder line with your API key.
+
 If `SCOPUS_API_KEY` is set and `config/pybliometrics/pybliometrics.cfg` is missing, the extractor will
 create the config automatically with repo-local cache directories.
 
@@ -35,5 +54,6 @@ python -m pybibliometric_analysis extract --config config/search.yaml \
 ## Tests
 
 ```bash
+pip install -e ".[dev]"
 pytest -q
 ```

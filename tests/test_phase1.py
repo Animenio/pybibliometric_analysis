@@ -1,3 +1,4 @@
+from collections import namedtuple
 from pathlib import Path
 
 import pandas as pd
@@ -7,13 +8,16 @@ from pybibliometric_analysis import settings
 from pybibliometric_analysis.extract_scopus import run_extract
 
 
+Document = namedtuple("Document", ["eid", "title"])
+
+
 class DummySearch:
-    def __init__(self, query, view=None, download=True, cursor=False):
+    def __init__(self, query, view=None, download=True, subscriber=True):
         self.query = query
         self.view = view
         self.download = download
-        self.cursor = cursor
-        self.results = [{"eid": "1", "title": "Test"}] if download else []
+        self.subscriber = subscriber
+        self.results = [Document(eid="1", title="Test")] if download else []
 
     def get_results_size(self):
         return 1
@@ -63,6 +67,7 @@ def test_no_overwrite_raw(tmp_path, monkeypatch):
             run_id="20200101T000000Z",
             config_path=tmp_path / "search.yaml",
             pybliometrics_config_dir=tmp_path / "config",
+            scopus_api_key_file=tmp_path / "scopus_api_key.txt",
             view=None,
             force_slicing=False,
             base_dir=tmp_path,
@@ -108,12 +113,16 @@ def test_extract_uses_mocked_scopus(monkeypatch, tmp_path):
     )
 
     monkeypatch.setattr("pybibliometric_analysis.extract_scopus.ScopusSearch", DummySearch)
-    monkeypatch.setattr("pybibliometric_analysis.extract_scopus.init_pybliometrics", lambda _: None)
+    monkeypatch.setattr(
+        "pybibliometric_analysis.extract_scopus.init_pybliometrics",
+        lambda *_args, **_kwargs: None,
+    )
 
     run_extract(
         run_id="20200101T000000Z",
         config_path=config_path,
         pybliometrics_config_dir=tmp_path / "config",
+        scopus_api_key_file=tmp_path / "scopus_api_key.txt",
         view=None,
         force_slicing=False,
         base_dir=tmp_path,
@@ -123,3 +132,28 @@ def test_extract_uses_mocked_scopus(monkeypatch, tmp_path):
     assert raw_path.exists()
     df = pd.read_parquet(raw_path)
     assert not df.empty
+
+
+def test_load_scopus_api_key_from_file(tmp_path):
+    api_key_file = tmp_path / "scopus_api_key.txt"
+    api_key_file.write_text(
+        "# comment line\n\nTEST_KEY_123\n",
+        encoding="utf-8",
+    )
+    assert settings.load_scopus_api_key(api_key_file) == "TEST_KEY_123"
+
+
+def test_load_scopus_api_key_placeholder_returns_none(tmp_path):
+    api_key_file = tmp_path / "scopus_api_key.txt"
+    api_key_file.write_text(
+        "# comment line\nYOUR_SCOPUS_API_KEY_HERE\n",
+        encoding="utf-8",
+    )
+    assert settings.load_scopus_api_key(api_key_file) is None
+
+
+def test_load_scopus_api_key_env_overrides_file(tmp_path, monkeypatch):
+    api_key_file = tmp_path / "scopus_api_key.txt"
+    api_key_file.write_text("FILE_KEY\n", encoding="utf-8")
+    monkeypatch.setenv("SCOPUS_API_KEY", "ENV_KEY")
+    assert settings.load_scopus_api_key(api_key_file) == "ENV_KEY"
