@@ -130,7 +130,7 @@ def test_extract_uses_mocked_scopus(monkeypatch, tmp_path):
 
     raw_path = tmp_path / "data" / "raw" / "scopus_search_20200101T000000Z.parquet"
     assert raw_path.exists()
-    df = pd.read_parquet(raw_path)
+    df = pd.read_pickle(raw_path)
     assert not df.empty
 
 
