@@ -1,8 +1,20 @@
 from collections import namedtuple
 from pathlib import Path
+import sys
+import types
+
+import pytest
+
+try:
+    import pyarrow  # noqa: F401
+except Exception:
+    stub = types.ModuleType("pyarrow")
+    stub.__version__ = "0.0.0"
+    stub.lib = object()
+    sys.modules["pyarrow"] = stub
+    sys.modules["pyarrow.lib"] = stub
 
 import pandas as pd
-import pytest
 
 from pybibliometric_analysis import settings
 from pybibliometric_analysis.extract_scopus import run_extract
