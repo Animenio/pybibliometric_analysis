@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.parquet
 data/
-outputs/
+outputs/figures/
+outputs/tables/
 logs/
 config/pybliometrics/pybliometrics.cfg

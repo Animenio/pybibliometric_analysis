@@ -48,7 +48,7 @@ def ensure_pybliometrics_config(config_dir: Path) -> Path:
 
     if not cfg_path.exists() and not api_key:
         raise RuntimeError(
-            "SCOPUS_API_KEY is not set and config/pybliometrics/pybliometrics.cfg is missing. "
+            f"SCOPUS_API_KEY is not set and {cfg_path} is missing. "
             "Set the SCOPUS_API_KEY environment variable or create the config file. "
             "See config/pybliometrics/pybliometrics.cfg.example for reference."
         )
@@ -65,11 +65,14 @@ def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
     sections = {
         "AbstractRetrieval": cache_root / "abstractretrieval",
         "AffiliationRetrieval": cache_root / "affiliationretrieval",
+        "AffiliationSearch": cache_root / "affiliationsearch",
         "AuthorRetrieval": cache_root / "authorretrieval",
+        "AuthorSearch": cache_root / "authorsearch",
         "CitationOverview": cache_root / "citationoverview",
         "PlumXMetrics": cache_root / "plumxmetrics",
         "ScopusSearch": cache_root / "scopussearch",
-        "SerialTitle": cache_root / "serialtitle",
+        "SerialTitleSearch": cache_root / "serialtitlesearch",
+        "SerialTitleISSN": cache_root / "serialtitleissn",
         "SubjectClassifications": cache_root / "subjectclassifications",
     }
     lines = ["[Directories]"]
@@ -79,6 +82,10 @@ def _render_pybliometrics_cfg(cache_root: Path, api_key: str) -> str:
     lines.append("")
     lines.append("[Authentication]")
     lines.append(f"APIKey = {api_key}")
+    lines.append("")
+    lines.append("[Requests]")
+    lines.append("Timeout = 20")
+    lines.append("Retries = 5")
     lines.append("")
     return "\n".join(lines)
 

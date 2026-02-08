@@ -1,3 +1,4 @@
+from collections import namedtuple
 from pathlib import Path
 
 import pandas as pd
@@ -7,13 +8,16 @@ from pybibliometric_analysis import settings
 from pybibliometric_analysis.extract_scopus import run_extract
 
 
+Document = namedtuple("Document", ["eid", "title"])
+
+
 class DummySearch:
-    def __init__(self, query, view=None, download=True, cursor=False):
+    def __init__(self, query, view=None, download=True, subscriber=True):
         self.query = query
         self.view = view
         self.download = download
-        self.cursor = cursor
-        self.results = [{"eid": "1", "title": "Test"}] if download else []
+        self.subscriber = subscriber
+        self.results = [Document(eid="1", title="Test")] if download else []
 
     def get_results_size(self):
         return 1
