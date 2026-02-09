@@ -9,6 +9,8 @@ Scopus bibliometric pipeline with a reproducible, non-interactive workflow for e
 - **Phase 3 — clean**: normalize, deduplicate, generate base analysis tables + manifest
 - **Phase 4 — analyze**: compute YoY/CAGR trends + figures
 
+The CI workflow lives in `.github/workflows/ci.yml` and runs on push/PR.
+
 ## Installation
 
 Requires Python **>=3.10**.
