@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -15,14 +15,6 @@ def detect_parquet_support() -> bool:
     except ImportError:
         return False
     return True
-
-
-def ensure_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-
-
-def detect_parquet_support() -> bool:
-    return detect_parquet_engine() is not None
 
 
 def ensure_dir(path: Path) -> None:

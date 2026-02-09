@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from pybibliometric_analysis.io_utils import read_table, write_json, write_table
 
@@ -181,7 +181,11 @@ def run_clean(
     pubs_by_year.to_csv(analysis_dir / f"pubs_by_year_{resolved_run_id}.csv", index=False)
 
     journal_col = next(
-        (c for c in ("prism:publicationName", "publicationName", "journal", "sourceTitle") if c in df.columns),
+        (
+            c
+            for c in ("prism:publicationName", "publicationName", "journal", "sourceTitle")
+            if c in df.columns
+        ),
         None,
     )
     if journal_col:

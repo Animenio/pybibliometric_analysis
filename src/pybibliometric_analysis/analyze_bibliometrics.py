@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from pybibliometric_analysis.io_utils import read_table
 
@@ -54,7 +54,11 @@ def _extract_run_id(path: Path) -> str:
     return name
 
 
-def _filter_years(df: "pd.DataFrame", min_year: Optional[int], max_year: Optional[int]) -> "pd.DataFrame":
+def _filter_years(
+    df: "pd.DataFrame",
+    min_year: Optional[int],
+    max_year: Optional[int],
+) -> "pd.DataFrame":
     if "pub_year" not in df.columns:
         return df
     filtered = df.dropna(subset=["pub_year"]).copy()
@@ -73,9 +77,11 @@ def _compute_yoy(pubs_by_year: "pd.DataFrame") -> "pd.DataFrame":
     pubs_by_year["yoy_pct"] = pd.NA
     mask = pubs_by_year["prev_count"] > 0
     pubs_by_year.loc[mask, "yoy_pct"] = (
-        pubs_by_year.loc[mask, "yoy_abs"] / pubs_by_year.loc[mask, "prev_count"]
+        (pubs_by_year.loc[mask, "yoy_abs"] / pubs_by_year.loc[mask, "prev_count"]) * 100
     )
-    return pubs_by_year.rename(columns={"pub_year": "year"})[["year", "count", "yoy_abs", "yoy_pct"]]
+    return pubs_by_year.rename(columns={"pub_year": "year"})[
+        ["year", "count", "yoy_abs", "yoy_pct"]
+    ]
 
 
 def _compute_cagr(pubs_by_year: "pd.DataFrame") -> dict:
@@ -178,7 +184,10 @@ def run_analyze(
             raise FileNotFoundError(f"Clean file not found: {clean_path}")
     else:
         clean_path = base_dir / "data" / "processed" / f"scopus_clean_{run_id}"
-        if not (clean_path.with_suffix(".parquet").exists() or clean_path.with_suffix(".csv").exists()):
+        if not (
+            clean_path.with_suffix(".parquet").exists()
+            or clean_path.with_suffix(".csv").exists()
+        ):
             raise FileNotFoundError(f"Clean file not found for run_id={run_id}: {clean_path}")
 
     resolved_run_id = run_id or _extract_run_id(clean_path)
@@ -196,17 +205,40 @@ def run_analyze(
     )
     analysis_dir = base_dir / "outputs" / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
-    pubs_by_year.to_csv(analysis_dir / f"pubs_by_year_{resolved_run_id}.csv", index=False)
+    pubs_by_year_path = analysis_dir / f"pubs_by_year_{resolved_run_id}.csv"
+    pubs_by_year.to_csv(pubs_by_year_path, index=False)
 
     yoy = _compute_yoy(pubs_by_year)
-    yoy.to_csv(analysis_dir / f"yoy_growth_{resolved_run_id}.csv", index=False)
+    yoy_path = analysis_dir / f"yoy_growth_{resolved_run_id}.csv"
+    yoy.to_csv(yoy_path, index=False)
 
     cagr_summary = _compute_cagr(pubs_by_year)
     cagr_summary.update(_compute_avg_last5_vs_prev5(pubs_by_year))
     cagr_summary["timestamp_utc"] = datetime.now(timezone.utc).isoformat()
     cagr_summary["run_id"] = resolved_run_id
-    _lazy_pandas().DataFrame([cagr_summary]).to_csv(
-        analysis_dir / f"cagr_{resolved_run_id}.csv", index=False
+    cagr_path = analysis_dir / f"cagr_{resolved_run_id}.csv"
+    _lazy_pandas().DataFrame([cagr_summary]).to_csv(cagr_path, index=False)
+
+    analysis_manifest = {
+        "schema_version": "1.0",
+        "timestamp_utc": cagr_summary["timestamp_utc"],
+        "run_id": resolved_run_id,
+        "period": {
+            "start_year": cagr_summary.get("start_year"),
+            "end_year": cagr_summary.get("end_year"),
+        },
+        "cagr": cagr_summary.get("cagr"),
+        "output_paths": {
+            "pubs_by_year": str(pubs_by_year_path),
+            "yoy_growth": str(yoy_path),
+            "cagr": str(cagr_path),
+        },
+        "yoy_pct_units": "percent",
+    }
+    (base_dir / "outputs" / "methods").mkdir(parents=True, exist_ok=True)
+    (base_dir / "outputs" / "methods" / f"analysis_manifest_{resolved_run_id}.json").write_text(
+        json.dumps(analysis_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
     )
 
     _maybe_plot(figures, pubs_by_year, yoy, resolved_run_id, base_dir, logger)

@@ -6,10 +6,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Tuple, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import pandas as pd
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple
 
 from pybibliometric_analysis.io_utils import detect_parquet_support, write_json, write_table
 from pybibliometric_analysis.settings import (
@@ -23,6 +20,9 @@ from pybibliometric_analysis.settings import (
     load_search_config,
     sha256_file,
 )
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 ScopusSearch = None
 
@@ -65,7 +65,9 @@ def run_extract(
     paths = build_paths(base_dir, run_id)
     logger = setup_logging(paths.log_path)
 
-    if paths.raw_path.with_suffix(".parquet").exists() or paths.raw_path.with_suffix(".csv").exists():
+    if paths.raw_path.with_suffix(".parquet").exists() or paths.raw_path.with_suffix(
+        ".csv"
+    ).exists():
         raise FileExistsError(f"Raw dataset already exists: {paths.raw_path}")
 
     config = load_search_config(config_path)
@@ -93,6 +95,8 @@ def run_extract(
             n_records_downloaded=0,
             columns_present=[],
             raw_output_path=str(raw_expected),
+            view=view,
+            dry_run=True,
             log_path=str(paths.log_path),
             manifest_path=str(paths.manifest_path),
         )
@@ -128,7 +132,8 @@ def run_extract(
         planned_strategy = "single"
 
     logger.info(
-        "Extract run_id=%s query=%s n_results=%s strategy=%s raw_base=%s manifest_path=%s log_path=%s",
+        "Extract run_id=%s query=%s n_results=%s strategy=%s raw_base=%s "
+        "manifest_path=%s log_path=%s",
         run_id,
         config.query,
         n_results,
@@ -145,6 +150,7 @@ def run_extract(
             view,
             start_year=config.start_year,
             end_year=config.end_year,
+            max_years_back=config.max_years_back,
             subscriber=config.subscriber_mode,
         )
     elif n_results > threshold and config.subscriber_mode and config.use_cursor_preferred:
@@ -153,6 +159,7 @@ def run_extract(
             view,
             start_year=config.start_year,
             end_year=config.end_year,
+            max_years_back=config.max_years_back,
             subscriber=config.subscriber_mode,
         )
     elif n_results > threshold:
@@ -162,6 +169,7 @@ def run_extract(
             view,
             start_year=config.start_year,
             end_year=config.end_year,
+            max_years_back=config.max_years_back,
             subscriber=config.subscriber_mode,
         )
     else:
@@ -188,6 +196,8 @@ def run_extract(
         n_records_downloaded=len(records),
         columns_present=columns_present,
         raw_output_path=raw_output["path"],
+        view=view,
+        dry_run=False,
         log_path=str(paths.log_path),
         manifest_path=str(paths.manifest_path),
         years_covered=years_covered,
@@ -239,6 +249,7 @@ def run_cursor_with_fallback(
     *,
     start_year: Optional[int],
     end_year: Optional[int],
+    max_years_back: Optional[int],
     subscriber: bool,
 ) -> Tuple[pd.DataFrame, Optional[List[int]], str]:
     try:
@@ -253,6 +264,7 @@ def run_cursor_with_fallback(
             view,
             start_year=start_year,
             end_year=end_year,
+            max_years_back=max_years_back,
             subscriber=subscriber,
         )
         return slicing_results, years, "slicing"
@@ -264,11 +276,18 @@ def run_slicing(
     *,
     start_year: Optional[int],
     end_year: Optional[int],
+    max_years_back: Optional[int],
     subscriber: bool,
 ) -> Tuple[pd.DataFrame, List[int]]:
     pd = _lazy_pandas()
     if start_year is None or end_year is None:
-        raise ValueError("start_year and end_year must be set for slicing strategy.")
+        if max_years_back is None:
+            raise ValueError(
+                "start_year/end_year or max_years_back must be set for slicing strategy."
+            )
+        current_year = time.gmtime().tm_year
+        end_year = current_year
+        start_year = current_year - int(max_years_back) + 1
     years = list(range(int(start_year), int(end_year) + 1))
     frames = []
     covered_years = []
@@ -330,7 +349,9 @@ def _raise_actionable_scopus_error(exc: Exception) -> None:
     error_name = exc.__class__.__name__
     actionable = {
         "Scopus401Error": "Unauthorized (401): SCOPUS_API_KEY is invalid or disabled.",
-        "Scopus403Error": "Forbidden (403): access requires INST_TOKEN or an institutional subscription.",
+        "Scopus403Error": (
+            "Forbidden (403): access requires INST_TOKEN or an institutional subscription."
+        ),
         "Scopus429Error": "Rate limited: too many requests; reduce request rate or retry later.",
     }
     if error_name in actionable:
@@ -339,7 +360,9 @@ def _raise_actionable_scopus_error(exc: Exception) -> None:
     if hasattr(exc, "status_code"):
         status_code = getattr(exc, "status_code")
         if status_code in {401, 403, 429}:
-            raise RuntimeError(actionable.get(f"Scopus{status_code}Error", "Scopus API error.")) from exc
+            raise RuntimeError(
+                actionable.get(f"Scopus{status_code}Error", "Scopus API error.")
+            ) from exc
 
     if find_spec("pybliometrics.scopus.exception"):
         exc_mod = import_module("pybliometrics.scopus.exception")
@@ -367,6 +390,8 @@ def _build_search_manifest(
     n_records_downloaded: int,
     columns_present: List[str],
     raw_output_path: str,
+    view: Optional[str],
+    dry_run: bool,
     log_path: str,
     manifest_path: str,
     years_covered: Optional[List[int]] = None,
@@ -384,10 +409,13 @@ def _build_search_manifest(
     manifest.update(
         {
             "schema_version": "1.0",
+            "dry_run": dry_run,
             "config_path": str(config_path),
             "config_hash": config_hash,
             "strategy_used": strategy_used,
             "subscriber_mode": subscriber_mode,
+            "view": view,
+            "output_raw_path": raw_output_path,
             "output_paths": {
                 "raw_data": raw_output_path,
                 "log_file": log_path,

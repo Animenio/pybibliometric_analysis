@@ -1,3 +1,5 @@
+import json
+import logging
 from collections import namedtuple
 import json
 import logging
@@ -7,7 +9,6 @@ import pytest
 
 from pybibliometric_analysis import settings
 from pybibliometric_analysis.extract_scopus import run_extract
-
 
 Document = namedtuple("Document", ["eid", "title"])
 
@@ -223,13 +224,18 @@ def test_dry_run_manifest(tmp_path):
     assert data["schema_version"] == "1.0"
     assert data["config_hash"]
     assert data["run_id"] == "dryrun-001"
+    assert data["dry_run"] is True
+    assert data["output_raw_path"]
 
 
 def test_no_secret_logged(tmp_path, caplog, monkeypatch):
     api_key_file = tmp_path / "scopus_api_key.txt"
     api_key_file.write_text("SECRET_KEY\n", encoding="utf-8")
     logger = logging.getLogger("pybibliometric_analysis.test")
-    monkeypatch.setattr("pybibliometric_analysis.settings._resolve_pybliometrics_init", lambda: None)
+    monkeypatch.setattr(
+        "pybibliometric_analysis.settings._resolve_pybliometrics_init",
+        lambda: None,
+    )
     with caplog.at_level(logging.INFO):
         settings.init_pybliometrics(
             tmp_path / "config",

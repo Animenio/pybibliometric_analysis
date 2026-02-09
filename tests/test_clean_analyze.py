@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 import shutil
 
@@ -47,5 +48,7 @@ def test_clean_and_analyze(tmp_path):
 
     yoy_path = tmp_path / "outputs" / "analysis" / f"yoy_growth_{run_id}.csv"
     cagr_path = tmp_path / "outputs" / "analysis" / f"cagr_{run_id}.csv"
+    analysis_manifest = tmp_path / "outputs" / "methods" / f"analysis_manifest_{run_id}.json"
     assert yoy_path.exists()
     assert cagr_path.exists()
+    assert analysis_manifest.exists()

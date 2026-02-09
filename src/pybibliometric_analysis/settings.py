@@ -1,13 +1,12 @@
+import hashlib
 import json
 import os
 import platform
 import subprocess
-from importlib import import_module
-from importlib.util import find_spec
-import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from importlib import metadata
+from importlib import import_module, metadata
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -23,6 +22,7 @@ class SearchConfig:
     subscriber_mode: bool
     start_year: Optional[int]
     end_year: Optional[int]
+    max_years_back: Optional[int]
 
 
 def load_search_config(path: Path) -> SearchConfig:
@@ -30,6 +30,7 @@ def load_search_config(path: Path) -> SearchConfig:
         data = yaml.safe_load(handle) or {}
     start_year = data.get("start_year")
     end_year = data.get("end_year")
+    max_years_back = data.get("max_years_back")
     return SearchConfig(
         query=str(data.get("query", "")),
         database=str(data.get("database", "")),
@@ -38,6 +39,7 @@ def load_search_config(path: Path) -> SearchConfig:
         subscriber_mode=bool(data.get("subscriber_mode", False)),
         start_year=int(start_year) if start_year is not None else None,
         end_year=int(end_year) if end_year is not None else None,
+        max_years_back=int(max_years_back) if max_years_back is not None else None,
     )
 
 
@@ -61,7 +63,9 @@ def load_scopus_api_key(api_key_file: Optional[Path]) -> Optional[str]:
     return api_key
 
 
-def load_scopus_api_key_with_source(api_key_file: Optional[Path]) -> tuple[Optional[str], Optional[str]]:
+def load_scopus_api_key_with_source(
+    api_key_file: Optional[Path],
+) -> tuple[Optional[str], Optional[str]]:
     default_file = Path("config/scopus_api_key.txt")
     if api_key_file and api_key_file.exists():
         cleaned = _read_first_token(api_key_file)
@@ -109,6 +113,7 @@ def ensure_pybliometrics_cfg(
     inst_token: Optional[str],
 ) -> Path:
     config_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["PYBLIOMETRICS_CONFIG"] = str(config_dir.resolve())
     cfg_path = config_dir / "pybliometrics.cfg"
 
     if not cfg_path.exists() and api_key:
@@ -120,8 +125,8 @@ def ensure_pybliometrics_cfg(
     if not cfg_path.exists() and not api_key:
         raise RuntimeError(
             f"SCOPUS_API_KEY is not set and {cfg_path} is missing. "
-            "Set the SCOPUS_API_KEY environment variable, provide a key file, or create the config file. "
-            "See config/pybliometrics/pybliometrics.cfg.example for reference."
+            "Set the SCOPUS_API_KEY environment variable, provide a key file, or create the "
+            "config file. See config/pybliometrics/pybliometrics.cfg.example for reference."
         )
 
     return cfg_path

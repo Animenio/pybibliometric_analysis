@@ -116,6 +116,15 @@ else
   exit 1
 fi
 
+if [ -f config/search_trend.yaml ]; then
+  CONFIG_PATH=config/search_trend.yaml
+elif [ -f config/search.yaml ]; then
+  CONFIG_PATH=config/search.yaml
+else
+  echo "ERROR: no config/search_trend.yaml or config/search.yaml found" >&2
+  exit 1
+fi
+
 RUN_ID="smoke-$(date -u +%Y%m%dT%H%M%SZ)"
 
 echo "RUN_ID=$RUN_ID"
@@ -154,8 +163,8 @@ python -m pybibliometric_analysis extract \
 If `--run-id` is omitted, the extractor prints the auto-generated value as `RUN_ID=smoke-<UTC timestamp>`.
 
 If your account is not a subscriber, set `subscriber_mode: false` and `use_cursor_preferred: false`
-in the config or use `--force-slicing` to avoid cursor mode. Slicing requires `start_year` and
-`end_year` in the YAML config.
+in the config or use `--force-slicing` to avoid cursor mode. Slicing requires either
+`start_year`/`end_year` or `max_years_back` in the YAML config.
 
 ## Phase 3 — clean
 
@@ -205,7 +214,7 @@ PY
 
 - `data/raw/` — raw Scopus results (`scopus_search_<RUN_ID>.parquet|csv`)
 - `data/processed/` — cleaned dataset (`scopus_clean_<RUN_ID>.parquet|csv`)
-- `outputs/methods/` — manifests (`search_manifest_<RUN_ID>.json`, `cleaning_manifest_<RUN_ID>.json`)
+- `outputs/methods/` — manifests (`search_manifest_<RUN_ID>.json`, `cleaning_manifest_<RUN_ID>.json`, `analysis_manifest_<RUN_ID>.json`)
 - `outputs/analysis/` — tables (`pubs_by_year_<RUN_ID>.csv`, `top_journals_<RUN_ID>.csv`, `top_authors_<RUN_ID>.csv`, `keyword_freq_<RUN_ID>.csv`, `yoy_growth_<RUN_ID>.csv`, `cagr_<RUN_ID>.csv`)
 - `outputs/figures/` — plots (`pubs_by_year_<RUN_ID>.png`, `yoy_growth_<RUN_ID>.png`)
 - `logs/` — log files
@@ -234,6 +243,8 @@ PY
 ```
 
 If only one publication year exists, CAGR is set to `0.0` by design.
+
+YoY values in `yoy_growth_<RUN_ID>.csv` include `yoy_pct` expressed as a percentage (0–100).
 
 ## Reproducibility checklist
 
