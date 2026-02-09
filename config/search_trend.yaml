@@ -1,8 +1,8 @@
-query: 'TITLE-ABS-KEY("islamic finance") AND SRCTYPE(j) AND DOCTYPE(ar)'
+query: 'ALL(islamic AND finance)'
 database: 'Scopus'
-notes: 'Journal articles only'
+notes: 'All fields; all source types; all document types; years 2002–2025'
 use_cursor_preferred: true
 subscriber_mode: false
-start_year: 1996
+start_year: 2002
 end_year: 2025
 max_years_back: 30
