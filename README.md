@@ -125,6 +125,15 @@ else
   exit 1
 fi
 
+if [ -f config/search_trend.yaml ]; then
+  CONFIG_PATH=config/search_trend.yaml
+elif [ -f config/search.yaml ]; then
+  CONFIG_PATH=config/search.yaml
+else
+  echo "ERROR: no config/search_trend.yaml or config/search.yaml found" >&2
+  exit 1
+fi
+
 RUN_ID="smoke-$(date -u +%Y%m%dT%H%M%SZ)"
 
 echo "RUN_ID=$RUN_ID"

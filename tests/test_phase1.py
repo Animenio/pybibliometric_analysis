@@ -226,6 +226,7 @@ def test_dry_run_manifest(tmp_path):
     assert data["run_id"] == "dryrun-001"
     assert data["dry_run"] is True
     assert data["output_raw_path"]
+    assert data["output_format"] in {"csv", "parquet"}
 
 
 def test_no_secret_logged(tmp_path, caplog, monkeypatch):

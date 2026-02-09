@@ -10,6 +10,12 @@ dist/
 data/
 outputs/
 logs/
+data/**/*.parquet
+data/**/*.csv
+outputs/**/*.parquet
+outputs/**/*.csv
+logs/**/*.parquet
+logs/**/*.csv
 config/pybliometrics/pybliometrics.cfg
 config/scopus_api_key.txt
 config/inst_token.txt

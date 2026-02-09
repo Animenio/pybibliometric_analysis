@@ -83,6 +83,7 @@ def run_extract(
 
     if dry_run:
         raw_expected = _expected_raw_path(paths.raw_path)
+        output_format = raw_expected.suffix.lstrip(".")
         manifest = _build_search_manifest(
             run_id=run_id,
             query=config.query,
@@ -95,6 +96,7 @@ def run_extract(
             n_records_downloaded=0,
             columns_present=[],
             raw_output_path=str(raw_expected),
+            output_format=output_format,
             view=view,
             dry_run=True,
             log_path=str(paths.log_path),
@@ -196,6 +198,7 @@ def run_extract(
         n_records_downloaded=len(records),
         columns_present=columns_present,
         raw_output_path=raw_output["path"],
+        output_format=raw_output["format"],
         view=view,
         dry_run=False,
         log_path=str(paths.log_path),
@@ -390,6 +393,7 @@ def _build_search_manifest(
     n_records_downloaded: int,
     columns_present: List[str],
     raw_output_path: str,
+    output_format: str,
     view: Optional[str],
     dry_run: bool,
     log_path: str,
@@ -416,6 +420,7 @@ def _build_search_manifest(
             "subscriber_mode": subscriber_mode,
             "view": view,
             "output_raw_path": raw_output_path,
+            "output_format": output_format,
             "output_paths": {
                 "raw_data": raw_output_path,
                 "log_file": log_path,

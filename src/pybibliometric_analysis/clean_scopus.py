@@ -234,6 +234,7 @@ def run_clean(
         "run_id": resolved_run_id,
         "input_path": str(raw_path),
         "output_path": cleaned_path["path"],
+        "output_format": cleaned_path["format"],
         "derived_fields": derived_fields,
         "duplicates_removed": original_rows - deduped_rows,
         "coverage": coverage,
