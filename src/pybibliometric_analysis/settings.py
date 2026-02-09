@@ -177,22 +177,15 @@ def init_pybliometrics(
 
 
 def _resolve_pybliometrics_init():
-    """Resolve init() across pybliometrics versions without import-time prompts."""
-    if find_spec("pybliometrics.utils"):
-        utils_mod = import_module("pybliometrics.utils")
-        pb_init = getattr(utils_mod, "init", None)
-        if pb_init is not None:
-            return pb_init
+    """Resolve pybliometrics.init() safely.
 
-    if find_spec("pybliometrics"):
-        pb_mod = import_module("pybliometrics")
-        pb_init = getattr(pb_mod, "init", None)
-        if pb_init is not None:
-            return pb_init
-
-    # pybliometrics 3.x may not have an explicit init function
-    # and will auto-load the config file, so return None instead of raising
-    return None
+    Prefer the public top-level symbol (v4+). Avoid probing submodules that can
+    trigger eager import side-effects in non-interactive CI contexts.
+    """
+    if not find_spec("pybliometrics"):
+        return None
+    pb_mod = import_module("pybliometrics")
+    return getattr(pb_mod, "init", None)
 
 
 def _render_pybliometrics_cfg(cache_root: Path, api_key: str, insttoken: Optional[str]) -> str:
