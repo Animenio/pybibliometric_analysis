@@ -183,7 +183,7 @@ def run_extract(
         logger.warning("No records downloaded for query")
 
     columns_present = list(records.columns)
-    raw_output = write_table(records, paths.raw_path)
+    raw_output = write_table(paths.raw_path, records, preferred_format="parquet")
     logger.info("Saved raw data to %s", raw_output["path"])
 
     manifest = _build_search_manifest(
@@ -412,7 +412,7 @@ def _build_search_manifest(
     )
     manifest.update(
         {
-            "schema_version": "1.0",
+            "schema_version": 1,
             "dry_run": dry_run,
             "config_path": str(config_path),
             "config_hash": config_hash,
@@ -421,6 +421,8 @@ def _build_search_manifest(
             "view": view,
             "output_raw_path": raw_output_path,
             "output_format": output_format,
+            "log_path": log_path,
+            "manifest_path": manifest_path,
             "output_paths": {
                 "raw_data": raw_output_path,
                 "log_file": log_path,

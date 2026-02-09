@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from importlib import import_module
@@ -220,7 +221,7 @@ def run_analyze(
     _lazy_pandas().DataFrame([cagr_summary]).to_csv(cagr_path, index=False)
 
     analysis_manifest = {
-        "schema_version": "1.0",
+        "schema_version": 1,
         "timestamp_utc": cagr_summary["timestamp_utc"],
         "run_id": resolved_run_id,
         "period": {
