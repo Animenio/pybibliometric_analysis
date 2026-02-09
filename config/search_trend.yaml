@@ -1,0 +1,4 @@
+query: 'TITLE-ABS-KEY("islamic finance") AND SRCTYPE(j) AND DOCTYPE(ar)'
+database: 'Scopus'
+notes: 'Journal articles only'
+use_cursor_preferred: true
