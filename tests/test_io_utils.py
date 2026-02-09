@@ -25,7 +25,7 @@ def test_read_table_parquet_fallback(tmp_path, monkeypatch):
     df = pd.DataFrame({"a": [3, 4]})
     df.to_csv(csv_path, index=False)
 
-    monkeypatch.setattr(io_utils, "detect_parquet_engine", lambda: None)
+    monkeypatch.setattr(io_utils, "detect_parquet_support", lambda: False)
     parquet_path = tmp_path / "data"
     loaded = io_utils.read_table(parquet_path)
     assert loaded["a"].tolist() == [3, 4]

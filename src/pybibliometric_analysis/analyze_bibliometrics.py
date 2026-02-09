@@ -203,10 +203,10 @@ def run_analyze(
 
     cagr_summary = _compute_cagr(pubs_by_year)
     cagr_summary.update(_compute_avg_last5_vs_prev5(pubs_by_year))
-    cagr_summary["utc_timestamp"] = datetime.now(timezone.utc).isoformat()
+    cagr_summary["timestamp_utc"] = datetime.now(timezone.utc).isoformat()
     cagr_summary["run_id"] = resolved_run_id
     _lazy_pandas().DataFrame([cagr_summary]).to_csv(
-        analysis_dir / f"cagr_summary_{resolved_run_id}.csv", index=False
+        analysis_dir / f"cagr_{resolved_run_id}.csv", index=False
     )
 
     _maybe_plot(figures, pubs_by_year, yoy, resolved_run_id, base_dir, logger)

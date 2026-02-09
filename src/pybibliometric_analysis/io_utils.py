@@ -1,21 +1,24 @@
 from __future__ import annotations
 
-import logging
 import json
-from importlib.util import find_spec
+import logging
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     import pandas as pd
 
 
-def detect_parquet_engine() -> Optional[str]:
-    if find_spec("pyarrow"):
-        return "pyarrow"
-    if find_spec("fastparquet"):
-        return "fastparquet"
-    return None
+def detect_parquet_support() -> bool:
+    try:
+        import pyarrow  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
 
 
 def detect_parquet_support() -> bool:
@@ -36,7 +39,7 @@ def _lazy_pandas():
     return pd
 
 
-def write_table(df: "pd.DataFrame", path_base: Path) -> dict:
+def write_table(df: "pd.DataFrame", path_base: Path, prefer_parquet: bool = True) -> dict:
     logger = logging.getLogger("pybibliometric_analysis")
     forced_suffix = path_base.suffix if path_base.suffix in {".parquet", ".csv"} else None
     base = _normalize_base_path(path_base)
@@ -47,8 +50,7 @@ def write_table(df: "pd.DataFrame", path_base: Path) -> dict:
         df.to_csv(csv_path, index=False)
         return {"path": str(csv_path), "format": "csv"}
 
-    engine = detect_parquet_engine()
-    if engine is None:
+    if not prefer_parquet or not detect_parquet_support():
         csv_path = base.with_suffix(".csv")
         logger.warning("Parquet engine unavailable; wrote CSV instead: %s", csv_path)
         df.to_csv(csv_path, index=False)
@@ -56,7 +58,7 @@ def write_table(df: "pd.DataFrame", path_base: Path) -> dict:
 
     try:
         parquet_path = base.with_suffix(".parquet")
-        df.to_parquet(parquet_path, index=False, engine=engine)
+        df.to_parquet(parquet_path, index=False, engine="pyarrow")
         return {"path": str(parquet_path), "format": "parquet"}
     except (ImportError, ValueError, AttributeError) as exc:
         csv_path = base.with_suffix(".csv")
@@ -76,14 +78,13 @@ def read_table(path_base: Path) -> "pd.DataFrame":
         return pd.read_csv(path)
 
     if path.suffix == ".parquet" and path.exists():
-        engine = detect_parquet_engine()
-        if engine is None:
+        if not detect_parquet_support():
             csv_path = path.with_suffix(".csv")
             if csv_path.exists():
                 logger.warning("Parquet engine unavailable; reading CSV instead: %s", csv_path)
                 return pd.read_csv(csv_path)
             raise RuntimeError("Parquet engine unavailable and no CSV fallback found.")
-        return pd.read_parquet(path, engine=engine)
+        return pd.read_parquet(path, engine="pyarrow")
 
     if path.suffix:
         raise FileNotFoundError(f"File not found: {path}")
@@ -91,13 +92,12 @@ def read_table(path_base: Path) -> "pd.DataFrame":
     parquet_path = path.with_suffix(".parquet")
     csv_path = path.with_suffix(".csv")
     if parquet_path.exists():
-        engine = detect_parquet_engine()
-        if engine is None and csv_path.exists():
+        if not detect_parquet_support() and csv_path.exists():
             logger.warning("Parquet engine unavailable; reading CSV instead: %s", csv_path)
             return pd.read_csv(csv_path)
-        if engine is None:
+        if not detect_parquet_support():
             raise RuntimeError("Parquet engine unavailable and no CSV fallback found.")
-        return pd.read_parquet(parquet_path, engine=engine)
+        return pd.read_parquet(parquet_path, engine="pyarrow")
     if csv_path.exists():
         return pd.read_csv(csv_path)
 

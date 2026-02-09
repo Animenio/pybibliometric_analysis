@@ -20,16 +20,24 @@ class SearchConfig:
     database: str
     notes: str
     use_cursor_preferred: bool
+    subscriber_mode: bool
+    start_year: Optional[int]
+    end_year: Optional[int]
 
 
 def load_search_config(path: Path) -> SearchConfig:
     with path.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
+    start_year = data.get("start_year")
+    end_year = data.get("end_year")
     return SearchConfig(
         query=str(data.get("query", "")),
         database=str(data.get("database", "")),
         notes=str(data.get("notes", "")),
         use_cursor_preferred=bool(data.get("use_cursor_preferred", False)),
+        subscriber_mode=bool(data.get("subscriber_mode", False)),
+        start_year=int(start_year) if start_year is not None else None,
+        end_year=int(end_year) if end_year is not None else None,
     )
 
 
@@ -54,18 +62,18 @@ def load_scopus_api_key(api_key_file: Optional[Path]) -> Optional[str]:
 
 
 def load_scopus_api_key_with_source(api_key_file: Optional[Path]) -> tuple[Optional[str], Optional[str]]:
-    api_key_file = api_key_file or Path("config/scopus_api_key.txt")
-    if api_key_file.exists():
+    default_file = Path("config/scopus_api_key.txt")
+    if api_key_file and api_key_file.exists():
         cleaned = _read_first_token(api_key_file)
         if cleaned and cleaned != "YOUR_SCOPUS_API_KEY_HERE":
             return cleaned, "file"
     env_key = os.getenv("SCOPUS_API_KEY")
     if env_key:
         return env_key.strip() or None, "env"
-    if api_key_file.exists():
-        cleaned = _read_first_token(api_key_file)
+    if default_file.exists():
+        cleaned = _read_first_token(default_file)
         if cleaned and cleaned != "YOUR_SCOPUS_API_KEY_HERE":
-            return cleaned, "file"
+            return cleaned, "default_file"
     return None, None
 
 
@@ -77,8 +85,8 @@ def load_scopus_insttoken(inst_token_file: Optional[Path] = None) -> Optional[st
 def load_scopus_insttoken_with_source(
     inst_token_file: Optional[Path] = None,
 ) -> tuple[Optional[str], Optional[str]]:
-    inst_token_file = inst_token_file or Path("config/inst_token.txt")
-    if inst_token_file.exists():
+    default_file = Path("config/inst_token.txt")
+    if inst_token_file and inst_token_file.exists():
         cleaned = _read_first_token(inst_token_file)
         if cleaned and cleaned != "YOUR_INST_TOKEN_HERE":
             return cleaned, "file"
@@ -88,10 +96,10 @@ def load_scopus_insttoken_with_source(
     env_token = os.getenv("INSTTOKEN")
     if env_token:
         return env_token.strip() or None, "env_compat"
-    if inst_token_file.exists():
-        cleaned = _read_first_token(inst_token_file)
+    if default_file.exists():
+        cleaned = _read_first_token(default_file)
         if cleaned and cleaned != "YOUR_INST_TOKEN_HERE":
-            return cleaned, "file"
+            return cleaned, "default_file"
     return None, None
 
 
@@ -241,7 +249,7 @@ def build_manifest(
     columns_present: List[str],
 ) -> Dict[str, Any]:
     return {
-        "utc_timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "run_id": run_id,
         "query": query,
         "database": database,
@@ -259,6 +267,10 @@ def build_manifest(
 def compute_file_hash(path: Path) -> str:
     data = path.read_bytes()
     return hashlib.sha256(data).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    return compute_file_hash(path)
 
 
 def write_manifest(path: Path, manifest: Dict[str, Any]) -> None:

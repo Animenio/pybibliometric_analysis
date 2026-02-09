@@ -216,13 +216,17 @@ def run_clean(
     derived_fields = ["pub_year", "author_names"]
     coverage = {
         "pub_year": _coverage_stats(df, "pub_year"),
-        "journal": _coverage_stats(df, journal_col) if journal_col else {"n_nonnull": 0, "n_total": len(df)},
+        "journal": _coverage_stats(df, journal_col)
+        if journal_col
+        else {"n_nonnull": 0, "n_total": len(df), "pct_nonnull": 0.0},
         "authors": _coverage_stats(df, "author_names"),
-        "keywords": _coverage_stats(df, keyword_col) if keyword_col else {"n_nonnull": 0, "n_total": len(df)},
+        "keywords": _coverage_stats(df, keyword_col)
+        if keyword_col
+        else {"n_nonnull": 0, "n_total": len(df), "pct_nonnull": 0.0},
     }
     manifest = {
         "schema_version": "1.0",
-        "utc_timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "run_id": resolved_run_id,
         "input_path": str(raw_path),
         "output_path": cleaned_path["path"],
@@ -248,7 +252,8 @@ def run_clean(
 
 def _coverage_stats(df: "pd.DataFrame", column: Optional[str]) -> dict:
     if not column or column not in df.columns:
-        return {"n_nonnull": 0, "n_total": len(df)}
+        return {"n_nonnull": 0, "n_total": len(df), "pct_nonnull": 0.0}
     n_total = len(df)
     n_nonnull = int(df[column].notna().sum())
-    return {"n_nonnull": n_nonnull, "n_total": n_total}
+    pct_nonnull = (n_nonnull / n_total) if n_total else 0.0
+    return {"n_nonnull": n_nonnull, "n_total": n_total, "pct_nonnull": pct_nonnull}

@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 from pybibliometric_analysis.io_utils import detect_parquet_support, write_json, write_table
 from pybibliometric_analysis.settings import (
     build_manifest,
-    compute_file_hash,
     ensure_pybliometrics_cfg,
     get_git_commit,
     get_package_versions,
@@ -22,6 +21,7 @@ from pybibliometric_analysis.settings import (
     load_scopus_api_key_with_source,
     load_scopus_insttoken_with_source,
     load_search_config,
+    sha256_file,
 )
 
 ScopusSearch = None
@@ -70,7 +70,7 @@ def run_extract(
 
     config = load_search_config(config_path)
     logger.info("Loaded search config for database %s", config.database)
-    config_hash = compute_file_hash(config_path)
+    config_hash = sha256_file(config_path)
 
     api_key, api_source = load_scopus_api_key_with_source(scopus_api_key_file)
     inst_token, inst_source = load_scopus_insttoken_with_source(inst_token_file)
@@ -112,17 +112,20 @@ def run_extract(
         config.query,
         view=view,
         download=False,
-        subscriber=False,
+        subscriber=config.subscriber_mode,
     )
     n_results = estimate_search.get_results_size()
     logger.info("Estimated %s results", n_results)
 
+    threshold = 5000
     if force_slicing:
         planned_strategy = "slicing"
-    elif n_results > 5000 and config.use_cursor_preferred:
+    elif n_results > threshold and config.subscriber_mode and config.use_cursor_preferred:
         planned_strategy = "cursor"
+    elif n_results > threshold:
+        planned_strategy = "slicing"
     else:
-        planned_strategy = "normal"
+        planned_strategy = "single"
 
     logger.info(
         "Extract run_id=%s query=%s n_results=%s strategy=%s raw_base=%s manifest_path=%s log_path=%s",
@@ -137,12 +140,33 @@ def run_extract(
 
     if force_slicing:
         strategy = "slicing"
-        records, years_covered = run_slicing(config.query, view)
-    elif n_results > 5000 and config.use_cursor_preferred:
-        records, years_covered, strategy = run_cursor_with_fallback(config.query, view)
+        records, years_covered = run_slicing(
+            config.query,
+            view,
+            start_year=config.start_year,
+            end_year=config.end_year,
+            subscriber=config.subscriber_mode,
+        )
+    elif n_results > threshold and config.subscriber_mode and config.use_cursor_preferred:
+        records, years_covered, strategy = run_cursor_with_fallback(
+            config.query,
+            view,
+            start_year=config.start_year,
+            end_year=config.end_year,
+            subscriber=config.subscriber_mode,
+        )
+    elif n_results > threshold:
+        strategy = "slicing"
+        records, years_covered = run_slicing(
+            config.query,
+            view,
+            start_year=config.start_year,
+            end_year=config.end_year,
+            subscriber=config.subscriber_mode,
+        )
     else:
-        strategy = "normal"
-        records = run_standard(config.query, view)
+        strategy = "single"
+        records = run_standard(config.query, view, subscriber=config.subscriber_mode)
         years_covered = None
 
     if records.empty:
@@ -204,14 +228,18 @@ def setup_logging(log_path: Path) -> logging.Logger:
     return logger
 
 
-def run_standard(query: str, view: Optional[str]) -> pd.DataFrame:
-    search = retry_scopus_search(query, view=view, subscriber=False)
+def run_standard(query: str, view: Optional[str], subscriber: bool) -> pd.DataFrame:
+    search = retry_scopus_search(query, view=view, subscriber=subscriber)
     return to_frame(search.results or [])
 
 
 def run_cursor_with_fallback(
     query: str,
     view: Optional[str],
+    *,
+    start_year: Optional[int],
+    end_year: Optional[int],
+    subscriber: bool,
 ) -> Tuple[pd.DataFrame, Optional[List[int]], str]:
     try:
         cursor_search = retry_scopus_search(query, view=view, subscriber=True)
@@ -220,23 +248,37 @@ def run_cursor_with_fallback(
             raise RuntimeError("Cursor search returned no results")
         return results, None, "cursor"
     except Exception:
-        slicing_results, years = run_slicing(query, view)
+        slicing_results, years = run_slicing(
+            query,
+            view,
+            start_year=start_year,
+            end_year=end_year,
+            subscriber=subscriber,
+        )
         return slicing_results, years, "slicing"
 
 
-def run_slicing(query: str, view: Optional[str]) -> Tuple[pd.DataFrame, List[int]]:
+def run_slicing(
+    query: str,
+    view: Optional[str],
+    *,
+    start_year: Optional[int],
+    end_year: Optional[int],
+    subscriber: bool,
+) -> Tuple[pd.DataFrame, List[int]]:
     pd = _lazy_pandas()
-    current_year = time.gmtime().tm_year
-    years = list(range(1900, current_year + 1))
+    if start_year is None or end_year is None:
+        raise ValueError("start_year and end_year must be set for slicing strategy.")
+    years = list(range(int(start_year), int(end_year) + 1))
     frames = []
     covered_years = []
     for year in years:
         year_query = f"{query} AND PUBYEAR = {year}"
-        precheck = retry_scopus_search(year_query, view=view, download=False, subscriber=True)
+        precheck = retry_scopus_search(year_query, view=view, download=False, subscriber=subscriber)
         if precheck.get_results_size() == 0:
             continue
         covered_years.append(year)
-        results = retry_scopus_search(year_query, view=view, subscriber=True)
+        results = retry_scopus_search(year_query, view=view, subscriber=subscriber)
         frames.append(to_frame(results.results or []))
 
     combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

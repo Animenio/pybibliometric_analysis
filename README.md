@@ -11,7 +11,7 @@ Scopus bibliometric pipeline with a reproducible, non-interactive workflow for e
 
 ## Installation
 
-Requires Python **>=3.11**.
+Requires Python **>=3.10**.
 
 Recommended (parquet + dev tools + figures):
 
@@ -107,6 +107,15 @@ else
   exit 1
 fi
 
+if [ -f config/search_trend.yaml ]; then
+  CONFIG_PATH=config/search_trend.yaml
+elif [ -f config/search.yaml ]; then
+  CONFIG_PATH=config/search.yaml
+else
+  echo "ERROR: no config/search_trend.yaml or config/search.yaml found" >&2
+  exit 1
+fi
+
 RUN_ID="smoke-$(date -u +%Y%m%dT%H%M%SZ)"
 
 echo "RUN_ID=$RUN_ID"
@@ -144,8 +153,9 @@ python -m pybibliometric_analysis extract \
 
 If `--run-id` is omitted, the extractor prints the auto-generated value as `RUN_ID=smoke-<UTC timestamp>`.
 
-If your account is not a subscriber, set `use_cursor_preferred: false` in the config or use
-`--force-slicing` to avoid cursor mode.
+If your account is not a subscriber, set `subscriber_mode: false` and `use_cursor_preferred: false`
+in the config or use `--force-slicing` to avoid cursor mode. Slicing requires `start_year` and
+`end_year` in the YAML config.
 
 ## Phase 3 — clean
 
@@ -178,7 +188,7 @@ data = json.loads(m.read_text(encoding="utf-8"))
 print("schema_version:", data.get("schema_version"))
 print("database:", data.get("database"))
 print("run_id:", data.get("run_id"))
-print("utc_timestamp:", data.get("utc_timestamp"))
+print("timestamp_utc:", data.get("timestamp_utc"))
 print("n_results_estimated:", data.get("n_results_estimated"))
 print("n_records_downloaded:", data.get("n_records_downloaded"))
 print("strategy_used:", data.get("strategy_used"))
@@ -196,7 +206,7 @@ PY
 - `data/raw/` — raw Scopus results (`scopus_search_<RUN_ID>.parquet|csv`)
 - `data/processed/` — cleaned dataset (`scopus_clean_<RUN_ID>.parquet|csv`)
 - `outputs/methods/` — manifests (`search_manifest_<RUN_ID>.json`, `cleaning_manifest_<RUN_ID>.json`)
-- `outputs/analysis/` — tables (`pubs_by_year_<RUN_ID>.csv`, `top_journals_<RUN_ID>.csv`, `top_authors_<RUN_ID>.csv`, `keyword_freq_<RUN_ID>.csv`, `yoy_growth_<RUN_ID>.csv`, `cagr_summary_<RUN_ID>.csv`)
+- `outputs/analysis/` — tables (`pubs_by_year_<RUN_ID>.csv`, `top_journals_<RUN_ID>.csv`, `top_authors_<RUN_ID>.csv`, `keyword_freq_<RUN_ID>.csv`, `yoy_growth_<RUN_ID>.csv`, `cagr_<RUN_ID>.csv`)
 - `outputs/figures/` — plots (`pubs_by_year_<RUN_ID>.png`, `yoy_growth_<RUN_ID>.png`)
 - `logs/` — log files
 
@@ -216,9 +226,9 @@ python - <<'PY'
 import pandas as pd
 from pathlib import Path
 
-run_id = Path("outputs/analysis").glob("cagr_summary_*.csv")
-run_id = sorted(run_id)[-1].stem.replace("cagr_summary_", "")
-summary = pd.read_csv(f"outputs/analysis/cagr_summary_{run_id}.csv")
+run_id = Path("outputs/analysis").glob("cagr_*.csv")
+run_id = sorted(run_id)[-1].stem.replace("cagr_", "")
+summary = pd.read_csv(f"outputs/analysis/cagr_{run_id}.csv")
 print(summary)
 PY
 ```
@@ -231,7 +241,7 @@ All items below are recorded in `outputs/methods/search_manifest_<RUN_ID>.json` 
 `outputs/methods/cleaning_manifest_<RUN_ID>.json`:
 
 - `run_id`
-- extraction `utc_timestamp`
+- extraction `timestamp_utc`
 - exact Scopus `query`
 - `config_path` and `config_hash`
 - strategy (`strategy_used`) and `subscriber_mode`
@@ -246,7 +256,7 @@ All items below are recorded in `outputs/methods/search_manifest_<RUN_ID>.json` 
 > We queried Scopus using the exact query recorded in `search_manifest_<RUN_ID>.json` and cleaned
 > the results following `cleaning_manifest_<RUN_ID>.json`. The annual publication series
 > (`pubs_by_year_<RUN_ID>.csv`) was analyzed for growth using `yoy_growth_<RUN_ID>.csv` and
-> `cagr_summary_<RUN_ID>.csv`, which support the claim that scientific interest in Islamic finance
+> `cagr_<RUN_ID>.csv`, which support the claim that scientific interest in Islamic finance
 > is increasing over time.
 
 ## Troubleshooting

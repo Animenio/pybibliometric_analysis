@@ -46,6 +46,6 @@ def test_clean_and_analyze(tmp_path):
     )
 
     yoy_path = tmp_path / "outputs" / "analysis" / f"yoy_growth_{run_id}.csv"
-    cagr_path = tmp_path / "outputs" / "analysis" / f"cagr_summary_{run_id}.csv"
+    cagr_path = tmp_path / "outputs" / "analysis" / f"cagr_{run_id}.csv"
     assert yoy_path.exists()
     assert cagr_path.exists()

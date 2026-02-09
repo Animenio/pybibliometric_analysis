@@ -90,7 +90,7 @@ def test_manifest_keys(monkeypatch, tmp_path):
         columns_present=["eid"],
     )
     expected_keys = {
-        "utc_timestamp",
+        "timestamp_utc",
         "run_id",
         "query",
         "database",
@@ -172,6 +172,12 @@ def test_load_scopus_api_key_env_overrides_file(tmp_path, monkeypatch):
     api_key_file.write_text("FILE_KEY\n", encoding="utf-8")
     monkeypatch.setenv("SCOPUS_API_KEY", "ENV_KEY")
     assert settings.load_scopus_api_key(api_key_file) == "FILE_KEY"
+
+
+def test_load_scopus_api_key_env_when_no_file(tmp_path, monkeypatch):
+    api_key_file = tmp_path / "scopus_api_key.txt"
+    monkeypatch.setenv("SCOPUS_API_KEY", "ENV_KEY")
+    assert settings.load_scopus_api_key(api_key_file) == "ENV_KEY"
 
 
 def test_load_inst_token_env_fallback(tmp_path, monkeypatch):
