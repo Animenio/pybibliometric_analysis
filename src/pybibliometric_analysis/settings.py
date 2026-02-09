@@ -117,7 +117,6 @@ def ensure_pybliometrics_cfg(
     inst_token: Optional[str],
 ) -> Path:
     config_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["PYBLIOMETRICS_CONFIG"] = str(config_dir.resolve())
     cfg_path = config_dir / "pybliometrics.cfg"
 
     if not cfg_path.exists() and api_key:
@@ -164,7 +163,12 @@ def init_pybliometrics(
     if init_func is None:
         return
 
-    for kwargs in ({"config_path": str(cfg_path)}, {"config_dir": str(config_dir)}):
+    keys = [api_key] if api_key else None
+    inst_tokens = [inst_token] if inst_token else None
+    for kwargs in (
+        {"config_path": str(cfg_path), "keys": keys, "inst_tokens": inst_tokens},
+        {"config_dir": str(config_dir), "keys": keys, "inst_tokens": inst_tokens},
+    ):
         try:
             init_func(**kwargs)
             return
