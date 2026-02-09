@@ -209,10 +209,7 @@ def run_clean(
         logger.warning("Author names missing; top_authors will be empty.")
     authors.to_csv(analysis_dir / f"top_authors_{resolved_run_id}.csv", index=False)
 
-    keyword_col = next(
-        (c for c in ("authkeywords", "keywords", "author_keywords") if c in df.columns),
-        None,
-    )
+    keyword_col = next((c for c in ("authkeywords", "keywords", "author_keywords") if c in df.columns), None)
     if keyword_col:
         keywords = _split_and_count(df[keyword_col])
     else:

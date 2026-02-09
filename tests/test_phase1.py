@@ -1,6 +1,8 @@
 import json
 import logging
 from collections import namedtuple
+import json
+import logging
 
 import pandas as pd
 import pytest
