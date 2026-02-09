@@ -1,4 +1,4 @@
-query: 'ALL(islamic AND finance)'
+query: 'TITLE-ABS-KEY("islamic finance" OR "islamic banking" OR sukuk OR takaful)'
 database: 'Scopus'
 notes: 'Broader Islamic finance query (journals only)'
 use_cursor_preferred: true

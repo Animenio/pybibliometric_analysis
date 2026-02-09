@@ -16,6 +16,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import yaml
 
 
 # === Colab setup (run in a notebook cell) ===
@@ -28,6 +29,8 @@ BASE_DIR = Path(".").resolve()
 CONFIG_PATH = BASE_DIR / "config" / "search_islamic_finance.yaml"
 RUN_ID = f"islamic-finance-{pd.Timestamp.utcnow():%Y%m%dT%H%M%SZ}"
 END_YEAR = 2025
+START_YEAR = 2002
+MAX_YEARS_PER_CHUNK = 8
 
 
 def run_pipeline(run_id: str) -> None:
@@ -39,21 +42,30 @@ def run_pipeline(run_id: str) -> None:
     if not scopus_api_key:
         raise RuntimeError("Set SCOPUS_API_KEY in the environment before running extraction.")
 
-    subprocess.run(
-        [
-            "python",
-            "-m",
-            "pybibliometric_analysis",
-            "extract",
-            "--run-id",
-            run_id,
-            "--config",
-            str(CONFIG_PATH),
-            "--pybliometrics-config-dir",
-            "config/pybliometrics",
-        ],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            [
+                "python",
+                "-m",
+                "pybibliometric_analysis",
+                "extract",
+                "--run-id",
+                run_id,
+                "--config",
+                str(CONFIG_PATH),
+                "--pybliometrics-config-dir",
+                "config/pybliometrics",
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        message = str(exc)
+        if "Scopus400Error" in message or "maximum number allowed" in message:
+            print("Hit Scopus service limit; retrying with year chunks.")
+            chunk_run_ids = run_extract_chunked(run_id)
+            combine_raw_chunks(run_id, chunk_run_ids)
+        else:
+            raise
     subprocess.run(
         ["python", "-m", "pybibliometric_analysis", "clean", "--run-id", run_id],
         check=True,
@@ -291,6 +303,80 @@ def export_summary(run_id: str, annual: pd.DataFrame, impact: pd.DataFrame) -> N
     }
     with (output_dir / f"islamic_finance_summary_{run_id}.json").open("w") as f:
         json.dump(summary, f, indent=2)
+
+
+def generate_year_chunks(start_year: int, end_year: int, max_years: int) -> list[tuple[int, int]]:
+    chunks = []
+    current = start_year
+    while current <= end_year:
+        chunk_end = min(current + max_years - 1, end_year)
+        chunks.append((current, chunk_end))
+        current = chunk_end + 1
+    return chunks
+
+
+def write_chunk_config(base_config: dict, start_year: int, end_year: int, chunk_id: str) -> Path:
+    output_dir = BASE_DIR / "outputs" / "methods"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    chunk_config = dict(base_config)
+    chunk_config["start_year"] = start_year
+    chunk_config["end_year"] = end_year
+    chunk_path = output_dir / f"chunk_config_{chunk_id}.yaml"
+    chunk_path.write_text(yaml.safe_dump(chunk_config, sort_keys=False), encoding="utf-8")
+    return chunk_path
+
+
+def run_extract_chunked(run_id: str) -> list[str]:
+    base_config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    chunks = generate_year_chunks(START_YEAR, END_YEAR, MAX_YEARS_PER_CHUNK)
+    chunk_run_ids = []
+    for start_year, end_year in chunks:
+        chunk_id = f"{run_id}-{start_year}-{end_year}"
+        chunk_config_path = write_chunk_config(base_config, start_year, end_year, chunk_id)
+        print(f"Running chunk: {start_year}-{end_year}")
+        import subprocess
+
+        subprocess.run(
+            [
+                "python",
+                "-m",
+                "pybibliometric_analysis",
+                "extract",
+                "--run-id",
+                chunk_id,
+                "--config",
+                str(chunk_config_path),
+                "--pybliometrics-config-dir",
+                "config/pybliometrics",
+            ],
+            check=True,
+        )
+        chunk_run_ids.append(chunk_id)
+    return chunk_run_ids
+
+
+def combine_raw_chunks(run_id: str, chunk_run_ids: list[str]) -> None:
+    raw_dir = BASE_DIR / "data" / "raw"
+    dataframes = []
+    use_parquet = False
+    for chunk_id in chunk_run_ids:
+        parquet_path = raw_dir / f"scopus_search_{chunk_id}.parquet"
+        csv_path = raw_dir / f"scopus_search_{chunk_id}.csv"
+        if parquet_path.exists():
+            dataframes.append(pd.read_parquet(parquet_path))
+            use_parquet = True
+        elif csv_path.exists():
+            dataframes.append(pd.read_csv(csv_path))
+        else:
+            raise FileNotFoundError(f"Missing raw data for chunk {chunk_id}")
+    combined = pd.concat(dataframes, ignore_index=True)
+    if "eid" in combined.columns:
+        combined = combined.drop_duplicates(subset=["eid"])
+    output_path = raw_dir / f"scopus_search_{run_id}"
+    if use_parquet:
+        combined.to_parquet(output_path.with_suffix(".parquet"), index=False)
+    else:
+        combined.to_csv(output_path.with_suffix(".csv"), index=False)
 
 
 def main() -> None:
