@@ -4,6 +4,7 @@ import platform
 import subprocess
 from importlib import import_module
 from importlib.util import find_spec
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import metadata
@@ -32,8 +33,9 @@ def load_search_config(path: Path) -> SearchConfig:
     )
 
 
-def generate_run_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+def generate_run_id(prefix: str = "smoke") -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{prefix}-{timestamp}"
 
 
 def _read_first_token(path: Path) -> Optional[str]:
@@ -47,43 +49,64 @@ def _read_first_token(path: Path) -> Optional[str]:
 
 
 def load_scopus_api_key(api_key_file: Optional[Path]) -> Optional[str]:
+    api_key, _source = load_scopus_api_key_with_source(api_key_file)
+    return api_key
+
+
+def load_scopus_api_key_with_source(api_key_file: Optional[Path]) -> tuple[Optional[str], Optional[str]]:
+    api_key_file = api_key_file or Path("config/scopus_api_key.txt")
+    if api_key_file.exists():
+        cleaned = _read_first_token(api_key_file)
+        if cleaned and cleaned != "YOUR_SCOPUS_API_KEY_HERE":
+            return cleaned, "file"
     env_key = os.getenv("SCOPUS_API_KEY")
     if env_key:
-        return env_key.strip() or None
-    if api_key_file and api_key_file.exists():
+        return env_key.strip() or None, "env"
+    if api_key_file.exists():
         cleaned = _read_first_token(api_key_file)
-        if cleaned == "YOUR_SCOPUS_API_KEY_HERE":
-            return None
-        return cleaned
-    return None
+        if cleaned and cleaned != "YOUR_SCOPUS_API_KEY_HERE":
+            return cleaned, "file"
+    return None, None
 
 
 def load_scopus_insttoken(inst_token_file: Optional[Path] = None) -> Optional[str]:
-    env_token = os.getenv("INST_TOKEN") or os.getenv("INSTTOKEN")
-    if env_token:
-        return env_token.strip() or None
-    if inst_token_file and inst_token_file.exists():
-        cleaned = _read_first_token(inst_token_file)
-        if cleaned == "YOUR_INST_TOKEN_HERE":
-            return None
-        return cleaned
-    return None
+    inst_token, _source = load_scopus_insttoken_with_source(inst_token_file)
+    return inst_token
 
 
-def ensure_pybliometrics_config(
-    config_dir: Path,
-    api_key_file: Optional[Path] = None,
+def load_scopus_insttoken_with_source(
     inst_token_file: Optional[Path] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    inst_token_file = inst_token_file or Path("config/inst_token.txt")
+    if inst_token_file.exists():
+        cleaned = _read_first_token(inst_token_file)
+        if cleaned and cleaned != "YOUR_INST_TOKEN_HERE":
+            return cleaned, "file"
+    env_token = os.getenv("INST_TOKEN")
+    if env_token:
+        return env_token.strip() or None, "env"
+    env_token = os.getenv("INSTTOKEN")
+    if env_token:
+        return env_token.strip() or None, "env_compat"
+    if inst_token_file.exists():
+        cleaned = _read_first_token(inst_token_file)
+        if cleaned and cleaned != "YOUR_INST_TOKEN_HERE":
+            return cleaned, "file"
+    return None, None
+
+
+def ensure_pybliometrics_cfg(
+    config_dir: Path,
+    api_key: Optional[str],
+    inst_token: Optional[str],
 ) -> Path:
     config_dir.mkdir(parents=True, exist_ok=True)
     cfg_path = config_dir / "pybliometrics.cfg"
-    api_key = load_scopus_api_key(api_key_file)
-    insttoken = load_scopus_insttoken(inst_token_file)
 
     if not cfg_path.exists() and api_key:
         cache_root = (Path.cwd() / ".cache" / "pybliometrics").resolve()
         cache_root.mkdir(parents=True, exist_ok=True)
-        cfg_text = _render_pybliometrics_cfg(cache_root, api_key, insttoken)
+        cfg_text = _render_pybliometrics_cfg(cache_root, api_key, inst_token)
         cfg_path.write_text(cfg_text, encoding="utf-8")
 
     if not cfg_path.exists() and not api_key:
@@ -96,16 +119,29 @@ def ensure_pybliometrics_config(
     return cfg_path
 
 
+def ensure_pybliometrics_config(
+    config_dir: Path,
+    api_key_file: Optional[Path] = None,
+    inst_token_file: Optional[Path] = None,
+) -> Path:
+    api_key, _api_source = load_scopus_api_key_with_source(api_key_file)
+    inst_token, _inst_source = load_scopus_insttoken_with_source(inst_token_file)
+    return ensure_pybliometrics_cfg(config_dir, api_key, inst_token)
+
+
 def init_pybliometrics(
     config_dir: Path,
     api_key_file: Optional[Path] = None,
     inst_token_file: Optional[Path] = None,
     logger: Optional[Any] = None,
 ) -> None:
-    cfg_path = ensure_pybliometrics_config(config_dir, api_key_file, inst_token_file)
+    api_key, api_source = load_scopus_api_key_with_source(api_key_file)
+    inst_token, inst_source = load_scopus_insttoken_with_source(inst_token_file)
+    cfg_path = ensure_pybliometrics_cfg(config_dir, api_key, inst_token)
     if logger:
         logger.info("Using pybliometrics config: %s", cfg_path)
-        logger.info("Has InstToken: %s", bool(load_scopus_insttoken(inst_token_file)))
+        logger.info("SCOPUS_API_KEY present: %s (source=%s)", bool(api_key), api_source or "none")
+        logger.info("InstToken present: %s (source=%s)", bool(inst_token), inst_source or "none")
 
     init_func = _resolve_pybliometrics_init()
     if init_func is None:
@@ -205,7 +241,7 @@ def build_manifest(
     columns_present: List[str],
 ) -> Dict[str, Any]:
     return {
-        "timestamp_iso": datetime.now(timezone.utc).isoformat(),
+        "utc_timestamp": datetime.now(timezone.utc).isoformat(),
         "run_id": run_id,
         "query": query,
         "database": database,
@@ -218,6 +254,11 @@ def build_manifest(
         "columns_present": columns_present,
         "git_commit": get_git_commit(),
     }
+
+
+def compute_file_hash(path: Path) -> str:
+    data = path.read_bytes()
+    return hashlib.sha256(data).hexdigest()
 
 
 def write_manifest(path: Path, manifest: Dict[str, Any]) -> None:

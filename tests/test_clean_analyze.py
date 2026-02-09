@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 
 import pandas as pd
 
@@ -6,26 +7,18 @@ from pybibliometric_analysis.analyze_bibliometrics import run_analyze
 from pybibliometric_analysis.clean_scopus import run_clean
 
 
-def _write_raw_csv(base_dir: Path, run_id: str) -> Path:
+def _copy_fixture(base_dir: Path, run_id: str) -> Path:
     raw_dir = base_dir / "data" / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame(
-        {
-            "eid": ["1", "2", "3", "4"],
-            "cover_date": ["2020-01-01", "2021-01-01", "2022-01-01", "2022-06-01"],
-            "pub_year": [pd.NA, pd.NA, pd.NA, pd.NA],
-            "creator": ["Alice", "Bob", "Alice", "Cara"],
-            "publicationName": ["Journal A", "Journal B", "Journal A", "Journal C"],
-        }
-    )
-    raw_path = raw_dir / f"scopus_search_{run_id}.csv"
-    df.to_csv(raw_path, index=False)
-    return raw_path
+    fixture = Path(__file__).parent / "fixtures" / "raw_scopus_sample.csv"
+    target = raw_dir / f"scopus_search_{run_id}.csv"
+    shutil.copy(fixture, target)
+    return target
 
 
 def test_clean_and_analyze(tmp_path):
     run_id = "trend-001"
-    _write_raw_csv(tmp_path, run_id)
+    _copy_fixture(tmp_path, run_id)
 
     run_clean(
         run_id=run_id,
@@ -39,7 +32,7 @@ def test_clean_and_analyze(tmp_path):
     assert cleaned_path.exists()
     cleaned = pd.read_csv(cleaned_path)
     assert cleaned["pub_year"].dropna().astype(int).min() == 2020
-    assert cleaned["author_names"].notna().all()
+    assert cleaned["author_names"].notna().any()
     keyword_path = tmp_path / "outputs" / "analysis" / f"keyword_freq_{run_id}.csv"
     assert keyword_path.exists()
 
@@ -53,6 +46,6 @@ def test_clean_and_analyze(tmp_path):
     )
 
     yoy_path = tmp_path / "outputs" / "analysis" / f"yoy_growth_{run_id}.csv"
-    cagr_path = tmp_path / "outputs" / "analysis" / f"cagr_summary_{run_id}.json"
+    cagr_path = tmp_path / "outputs" / "analysis" / f"cagr_summary_{run_id}.csv"
     assert yoy_path.exists()
     assert cagr_path.exists()

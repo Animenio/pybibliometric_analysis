@@ -11,8 +11,18 @@ from typing import Any, Iterable, List, Optional, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     import pandas as pd
 
-from pybibliometric_analysis.io_utils import detect_parquet_engine, write_table
-from pybibliometric_analysis.settings import build_manifest, init_pybliometrics, load_search_config, write_manifest
+from pybibliometric_analysis.io_utils import detect_parquet_support, write_json, write_table
+from pybibliometric_analysis.settings import (
+    build_manifest,
+    compute_file_hash,
+    ensure_pybliometrics_cfg,
+    get_git_commit,
+    get_package_versions,
+    init_pybliometrics,
+    load_scopus_api_key_with_source,
+    load_scopus_insttoken_with_source,
+    load_search_config,
+)
 
 ScopusSearch = None
 
@@ -49,13 +59,46 @@ def run_extract(
     inst_token_file: Optional[Path],
     view: Optional[str],
     force_slicing: bool,
+    dry_run: bool = False,
     base_dir: Path = Path("."),
 ) -> None:
     paths = build_paths(base_dir, run_id)
     logger = setup_logging(paths.log_path)
 
-    if paths.raw_path.exists():
+    if paths.raw_path.with_suffix(".parquet").exists() or paths.raw_path.with_suffix(".csv").exists():
         raise FileExistsError(f"Raw dataset already exists: {paths.raw_path}")
+
+    config = load_search_config(config_path)
+    logger.info("Loaded search config for database %s", config.database)
+    config_hash = compute_file_hash(config_path)
+
+    api_key, api_source = load_scopus_api_key_with_source(scopus_api_key_file)
+    inst_token, inst_source = load_scopus_insttoken_with_source(inst_token_file)
+    cfg_path = ensure_pybliometrics_cfg(pybliometrics_config_dir, api_key, inst_token)
+    logger.info("Using pybliometrics config: %s", cfg_path)
+    logger.info("SCOPUS_API_KEY present: %s (source=%s)", bool(api_key), api_source or "none")
+    logger.info("InstToken present: %s (source=%s)", bool(inst_token), inst_source or "none")
+
+    if dry_run:
+        raw_expected = _expected_raw_path(paths.raw_path)
+        manifest = _build_search_manifest(
+            run_id=run_id,
+            query=config.query,
+            database=config.database,
+            config_path=config_path,
+            config_hash=config_hash,
+            strategy_used="dry-run",
+            subscriber_mode=False,
+            n_results_estimated=0,
+            n_records_downloaded=0,
+            columns_present=[],
+            raw_output_path=str(raw_expected),
+            log_path=str(paths.log_path),
+            manifest_path=str(paths.manifest_path),
+        )
+        write_json(manifest, paths.manifest_path)
+        logger.info("Dry run complete. Manifest written to %s", paths.manifest_path)
+        return
 
     logger.info("Initializing pybliometrics configuration")
     init_pybliometrics(
@@ -64,9 +107,6 @@ def run_extract(
         inst_token_file=inst_token_file,
         logger=logger,
     )
-
-    config = load_search_config(config_path)
-    logger.info("Loaded search config for database %s", config.database)
 
     estimate_search = retry_scopus_search(
         config.query,
@@ -85,7 +125,7 @@ def run_extract(
         planned_strategy = "normal"
 
     logger.info(
-        "Extract run_id=%s query=%s n_results=%s strategy=%s raw_path=%s manifest_path=%s log_path=%s",
+        "Extract run_id=%s query=%s n_results=%s strategy=%s raw_base=%s manifest_path=%s log_path=%s",
         run_id,
         config.query,
         n_results,
@@ -109,27 +149,31 @@ def run_extract(
         logger.warning("No records downloaded for query")
 
     columns_present = list(records.columns)
-    raw_output_path = write_table(records, paths.raw_path)
-    logger.info("Saved raw data to %s", raw_output_path)
+    raw_output = write_table(records, paths.raw_path)
+    logger.info("Saved raw data to %s", raw_output["path"])
 
-    manifest = build_manifest(
+    manifest = _build_search_manifest(
         run_id=run_id,
         query=config.query,
         database=config.database,
+        config_path=config_path,
+        config_hash=config_hash,
+        strategy_used=strategy,
+        subscriber_mode=strategy in {"cursor", "slicing"},
         n_results_estimated=n_results,
         n_records_downloaded=len(records),
-        strategy_used=strategy,
-        years_covered=years_covered,
         columns_present=columns_present,
+        raw_output_path=raw_output["path"],
+        log_path=str(paths.log_path),
+        manifest_path=str(paths.manifest_path),
+        years_covered=years_covered,
     )
-    manifest["raw_output_path"] = str(raw_output_path)
-    manifest["parquet_engine"] = detect_parquet_engine()
-    write_manifest(paths.manifest_path, manifest)
+    write_json(manifest, paths.manifest_path)
     logger.info("Wrote manifest to %s", paths.manifest_path)
 
 
 def build_paths(base_dir: Path, run_id: str) -> ExtractPaths:
-    raw_path = base_dir / "data" / "raw" / f"scopus_search_{run_id}.parquet"
+    raw_path = base_dir / "data" / "raw" / f"scopus_search_{run_id}"
     manifest_path = base_dir / "outputs" / "methods" / f"search_manifest_{run_id}.json"
     log_path = base_dir / "logs" / f"extract_{run_id}.log"
 
@@ -243,8 +287,8 @@ def to_frame(records: Iterable[object]) -> pd.DataFrame:
 def _raise_actionable_scopus_error(exc: Exception) -> None:
     error_name = exc.__class__.__name__
     actionable = {
-        "Scopus401Error": "Unauthorized: check SCOPUS_API_KEY and optional INST_TOKEN entitlement.",
-        "Scopus403Error": "Forbidden: verify API key entitlement or add INST_TOKEN if required.",
+        "Scopus401Error": "Unauthorized (401): SCOPUS_API_KEY is invalid or disabled.",
+        "Scopus403Error": "Forbidden (403): access requires INST_TOKEN or an institutional subscription.",
         "Scopus429Error": "Rate limited: too many requests; reduce request rate or retry later.",
     }
     if error_name in actionable:
@@ -261,3 +305,55 @@ def _raise_actionable_scopus_error(exc: Exception) -> None:
             exc_cls = getattr(exc_mod, name, None)
             if exc_cls and isinstance(exc, exc_cls):
                 raise RuntimeError(message) from exc
+
+
+def _expected_raw_path(raw_base: Path) -> Path:
+    suffix = ".parquet" if detect_parquet_support() else ".csv"
+    return raw_base.with_suffix(suffix)
+
+
+def _build_search_manifest(
+    *,
+    run_id: str,
+    query: str,
+    database: str,
+    config_path: Path,
+    config_hash: str,
+    strategy_used: str,
+    subscriber_mode: bool,
+    n_results_estimated: int,
+    n_records_downloaded: int,
+    columns_present: List[str],
+    raw_output_path: str,
+    log_path: str,
+    manifest_path: str,
+    years_covered: Optional[List[int]] = None,
+) -> dict:
+    manifest = build_manifest(
+        run_id=run_id,
+        query=query,
+        database=database or "Scopus",
+        n_results_estimated=n_results_estimated,
+        n_records_downloaded=n_records_downloaded,
+        strategy_used=strategy_used,
+        years_covered=years_covered,
+        columns_present=columns_present,
+    )
+    manifest.update(
+        {
+            "schema_version": "1.0",
+            "config_path": str(config_path),
+            "config_hash": config_hash,
+            "strategy_used": strategy_used,
+            "subscriber_mode": subscriber_mode,
+            "output_paths": {
+                "raw_data": raw_output_path,
+                "log_file": log_path,
+                "manifest": manifest_path,
+            },
+            "python_version": manifest["python_version"],
+            "package_versions": get_package_versions(),
+            "git_commit": get_git_commit(),
+        }
+    )
+    return manifest
