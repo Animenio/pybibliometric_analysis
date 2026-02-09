@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from importlib import import_module
@@ -70,29 +69,41 @@ def _compute_yoy(pubs_by_year: "pd.DataFrame") -> "pd.DataFrame":
     pd = _lazy_pandas()
     pubs_by_year = pubs_by_year.sort_values("pub_year")
     pubs_by_year["prev_count"] = pubs_by_year["count"].shift(1)
-    pubs_by_year["yoy_growth"] = pd.NA
+    pubs_by_year["yoy_abs"] = pubs_by_year["count"] - pubs_by_year["prev_count"]
+    pubs_by_year["yoy_pct"] = pd.NA
     mask = pubs_by_year["prev_count"] > 0
-    pubs_by_year.loc[mask, "yoy_growth"] = (
-        (pubs_by_year.loc[mask, "count"] - pubs_by_year.loc[mask, "prev_count"])
-        / pubs_by_year.loc[mask, "prev_count"]
+    pubs_by_year.loc[mask, "yoy_pct"] = (
+        pubs_by_year.loc[mask, "yoy_abs"] / pubs_by_year.loc[mask, "prev_count"]
     )
-    return pubs_by_year[["pub_year", "count", "yoy_growth"]]
+    return pubs_by_year.rename(columns={"pub_year": "year"})[["year", "count", "yoy_abs", "yoy_pct"]]
 
 
 def _compute_cagr(pubs_by_year: "pd.DataFrame") -> dict:
     nonzero = pubs_by_year[pubs_by_year["count"] > 0].sort_values("pub_year")
-    if nonzero.empty or len(nonzero) < 2:
-        return {"cagr": None, "start_year": None, "end_year": None}
+    if nonzero.empty:
+        return {
+            "start_year": None,
+            "end_year": None,
+            "start_count": None,
+            "end_count": None,
+            "cagr": 0.0,
+        }
     start_year = int(nonzero.iloc[0]["pub_year"])
     end_year = int(nonzero.iloc[-1]["pub_year"])
     start_count = float(nonzero.iloc[0]["count"])
     end_count = float(nonzero.iloc[-1]["count"])
     years = end_year - start_year
     if years <= 0 or start_count <= 0:
-        cagr = None
+        cagr = 0.0
     else:
         cagr = (end_count / start_count) ** (1 / years) - 1
-    return {"cagr": cagr, "start_year": start_year, "end_year": end_year}
+    return {
+        "start_year": start_year,
+        "end_year": end_year,
+        "start_count": start_count,
+        "end_count": end_count,
+        "cagr": cagr,
+    }
 
 
 def _compute_avg_last5_vs_prev5(pubs_by_year: "pd.DataFrame") -> dict:
@@ -109,7 +120,14 @@ def _compute_avg_last5_vs_prev5(pubs_by_year: "pd.DataFrame") -> dict:
     return {"avg_last5": avg_last5, "avg_prev5": avg_prev5, "avg_last5_vs_prev5": ratio}
 
 
-def _maybe_plot(figures: bool, pubs_by_year: "pd.DataFrame", yoy: "pd.DataFrame", run_id: str, base_dir: Path, logger: logging.Logger) -> None:
+def _maybe_plot(
+    figures: bool,
+    pubs_by_year: "pd.DataFrame",
+    yoy: "pd.DataFrame",
+    run_id: str,
+    base_dir: Path,
+    logger: logging.Logger,
+) -> None:
     if not figures:
         return
     if not find_spec("matplotlib"):
@@ -129,10 +147,10 @@ def _maybe_plot(figures: bool, pubs_by_year: "pd.DataFrame", yoy: "pd.DataFrame"
     plt.close()
 
     plt.figure()
-    plt.plot(yoy["pub_year"], yoy["yoy_growth"], marker="o")
+    plt.plot(yoy["year"], yoy["yoy_pct"], marker="o")
     plt.title("Year-over-Year Growth")
     plt.xlabel("Year")
-    plt.ylabel("YoY Growth")
+    plt.ylabel("YoY %")
     plt.tight_layout()
     plt.savefig(figures_dir / f"yoy_growth_{run_id}.png")
     plt.close()
@@ -151,17 +169,17 @@ def run_analyze(
     log_path = base_dir / "logs" / f"analyze_{run_id or 'latest'}.log"
     logger = setup_logging(log_path)
 
+    if not run_id:
+        raise ValueError("--run-id is required for analyze.")
+
     if input_path:
         clean_path = input_path
-    elif run_id:
-        clean_path = base_dir / "data" / "processed" / f"scopus_clean_{run_id}.parquet"
         if not clean_path.exists():
-            clean_path = clean_path.with_suffix(".csv")
+            raise FileNotFoundError(f"Clean file not found: {clean_path}")
     else:
-        clean_path = _latest_clean_file(base_dir)
-
-    if not clean_path.exists():
-        raise FileNotFoundError(f"Clean file not found: {clean_path}")
+        clean_path = base_dir / "data" / "processed" / f"scopus_clean_{run_id}"
+        if not (clean_path.with_suffix(".parquet").exists() or clean_path.with_suffix(".csv").exists()):
+            raise FileNotFoundError(f"Clean file not found for run_id={run_id}: {clean_path}")
 
     resolved_run_id = run_id or _extract_run_id(clean_path)
     logger.info("Analyzing run_id=%s input=%s", resolved_run_id, clean_path)
@@ -185,10 +203,10 @@ def run_analyze(
 
     cagr_summary = _compute_cagr(pubs_by_year)
     cagr_summary.update(_compute_avg_last5_vs_prev5(pubs_by_year))
-    cagr_summary["timestamp_iso"] = datetime.now(timezone.utc).isoformat()
+    cagr_summary["utc_timestamp"] = datetime.now(timezone.utc).isoformat()
     cagr_summary["run_id"] = resolved_run_id
-    (analysis_dir / f"cagr_summary_{resolved_run_id}.json").write_text(
-        json.dumps(cagr_summary, indent=2, sort_keys=True), encoding="utf-8"
+    _lazy_pandas().DataFrame([cagr_summary]).to_csv(
+        analysis_dir / f"cagr_summary_{resolved_run_id}.csv", index=False
     )
 
     _maybe_plot(figures, pubs_by_year, yoy, resolved_run_id, base_dir, logger)

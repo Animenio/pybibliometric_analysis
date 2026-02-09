@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .cache/
+.venv/
 .pytest_cache/
 .ruff_cache/
 build/
@@ -9,9 +10,6 @@ dist/
 data/
 outputs/
 logs/
-**/*.parquet
-**/*.csv
-**/*.png
 config/pybliometrics/pybliometrics.cfg
 config/scopus_api_key.txt
 config/inst_token.txt
