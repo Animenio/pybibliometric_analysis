@@ -1,4 +1,4 @@
-query: 'TITLE-ABS-KEY("islamic finance")'
+query: 'ALL(islamic AND finance)'
 database: 'Scopus'
 notes: 'no limits'
 use_cursor_preferred: true
