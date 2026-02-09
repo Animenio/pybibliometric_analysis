@@ -87,7 +87,7 @@ python -m pip install -e ".[dev,parquet]"   # recommended (parquet)
 
 pytest -q
 
-# CLI availability checks
+# CLI availability checks (keep only commands that exist in this repo)
 python -m pybibliometric_analysis extract --help
 python -m pybibliometric_analysis clean --help
 python -m pybibliometric_analysis analyze --help
@@ -101,9 +101,15 @@ echo "=== PHASE 2: extract (smoke) ==="
 
 RUN_ID="smoke-$(date -u +%Y%m%dT%H%M%SZ)"
 
+# Config autodetect: prefer trend if available
+CONFIG="config/search_trend.yaml"
+if [ ! -f "$CONFIG" ]; then
+  CONFIG="config/search.yaml"
+fi
+
 python -m pybibliometric_analysis extract \
   --run-id "$RUN_ID" \
-  --config config/search_trend.yaml \
+  --config "$CONFIG" \
   --pybliometrics-config-dir config/pybliometrics
 
 echo "✅ PHASE 2 OK (smoke)"
@@ -177,6 +183,7 @@ print("run_id:", data.get("run_id"))
 print("n_results_estimated:", data.get("n_results_estimated"))
 print("n_records_downloaded:", data.get("n_records_downloaded"))
 print("strategy_used:", data.get("strategy_used"))
+
 cols = data.get("columns_present") or []
 print("columns_present (n):", len(cols))
 
