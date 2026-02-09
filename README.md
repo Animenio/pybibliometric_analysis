@@ -259,6 +259,7 @@ All items below are recorded in `outputs/methods/search_manifest_<RUN_ID>.json` 
 
 - **401**: `SCOPUS_API_KEY` is invalid or disabled.
 - **403**: access requires `INST_TOKEN` or an institutional subscription.
+- **400 (Scopus400Error):** Exceeds the maximum number allowed for the service level
 - **429 rate limit**: reduce request volume or retry later.
 - **Parquet engine missing or ABI mismatch**: install `pyarrow` via `.[parquet]` or use the CSV fallback.
 - **Proxy/build isolation**: retry install with `python -m pip install -e . --no-build-isolation`.
