@@ -3,6 +3,6 @@ database: 'Scopus'
 notes: 'Journal articles only'
 use_cursor_preferred: true
 subscriber_mode: false
-start_year: 1996
+start_year: 2002
 end_year: 2025
 max_years_back: 30
