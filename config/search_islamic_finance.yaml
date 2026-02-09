@@ -1,0 +1,10 @@
+query: 'TITLE-ABS-KEY("islamic finance" OR "islamic banking" OR sukuk OR takaful)'
+database: 'Scopus'
+notes: 'Broader Islamic finance query (journals only)'
+use_cursor_preferred: true
+subscriber_mode: false
+start_year: 2002
+end_year: 2025
+max_years_back: 30
+document_types:
+  - ar
