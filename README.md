@@ -78,27 +78,26 @@ Use `config/search.yaml` for a minimal query or `config/search_trend.yaml` for j
 set -euo pipefail
 
 echo "=== PHASE 1: sanity ==="
-
 python --version
 python -m pip --version
 
+# Install (choose one)
 python -m pip install -e ".[dev,parquet]"   # recommended (parquet)
-# python -m pip install -e ".[dev]"         # minimal (CSV fallback)
+# python -m pip install -e ".[dev]"         # minimal
 
 pytest -q
 
+# CLI availability checks
 python -m pybibliometric_analysis extract --help
 python -m pybibliometric_analysis clean --help
 python -m pybibliometric_analysis analyze --help
 
 git status -sb
-
 echo "✅ PHASE 1 OK"
 
 echo "=== PHASE 2: extract (smoke) ==="
-
 : "${SCOPUS_API_KEY:?Set SCOPUS_API_KEY in your environment}"
-# export INST_TOKEN="..."  # optional
+# export INST_TOKEN="..."  # optional (institution token)
 
 RUN_ID="smoke-$(date -u +%Y%m%dT%H%M%SZ)"
 
@@ -110,8 +109,6 @@ python -m pybibliometric_analysis extract \
 echo "✅ PHASE 2 OK (smoke)"
 echo "RUN_ID=$RUN_ID"
 ```
-
-If `config/search_trend.yaml` is not available, use `config/search.yaml` instead.
 
 ## Phase 1 — sanity
 
@@ -160,22 +157,34 @@ Figures are optional; if matplotlib is missing, analysis still runs (no crash).
 ```bash
 RUN_ID="smoke-YYYYMMDDTHHMMSSZ"
 
-ls -lah data/raw | tail -n 5
-ls -lah outputs/methods | tail -n 5
-ls -lah logs | tail -n 5
+ls -lah data/raw | tail -n 10 || true
+ls -lah outputs/methods | tail -n 10 || true
+ls -lah logs | tail -n 10 || true
 
-python - <<'PY'
+python - <<'PY' "$RUN_ID"
 import json, pathlib, sys
+
 run_id = sys.argv[1]
 m = pathlib.Path("outputs/methods") / f"search_manifest_{run_id}.json"
-print("manifest:", m)
+if not m.exists():
+    raise SystemExit(f"ERROR: manifest not found: {m}")
+
 data = json.loads(m.read_text(encoding="utf-8"))
+
+print("manifest:", m)
 print("database:", data.get("database"))
 print("run_id:", data.get("run_id"))
+print("n_results_estimated:", data.get("n_results_estimated"))
 print("n_records_downloaded:", data.get("n_records_downloaded"))
 print("strategy_used:", data.get("strategy_used"))
-print("columns_present (n):", len(data.get("columns_present") or []))
-PY "$RUN_ID"
+cols = data.get("columns_present") or []
+print("columns_present (n):", len(cols))
+
+raw_parquet = pathlib.Path("data/raw") / f"scopus_search_{run_id}.parquet"
+raw_csv = pathlib.Path("data/raw") / f"scopus_search_{run_id}.csv"
+print("raw expected parquet:", raw_parquet, "exists=", raw_parquet.exists())
+print("raw expected csv:", raw_csv, "exists=", raw_csv.exists())
+PY
 ```
 
 ## Output structure
