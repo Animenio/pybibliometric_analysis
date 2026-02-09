@@ -51,6 +51,8 @@ cp config/scopus_api_key.txt.example config/scopus_api_key.txt
 cp config/inst_token.txt.example config/inst_token.txt
 ```
 
+Never commit files containing real credentials.
+
 The extractor writes `config/pybliometrics/pybliometrics.cfg` automatically if missing and
 `SCOPUS_API_KEY` is present. If you want to manage it manually, copy the example:
 
@@ -107,6 +109,8 @@ if [ ! -f "$CONFIG" ]; then
   CONFIG="config/search.yaml"
 fi
 
+echo "RUN_ID=$RUN_ID"
+
 python -m pybibliometric_analysis extract \
   --run-id "$RUN_ID" \
   --config "$CONFIG" \
@@ -118,13 +122,7 @@ echo "RUN_ID=$RUN_ID"
 
 ## Phase 1 — sanity
 
-```bash
-python -m pip install -e ".[dev]"
-pytest -q
-python -m pybibliometric_analysis extract --help
-python -m pybibliometric_analysis clean --help
-python -m pybibliometric_analysis analyze --help
-```
+Phase 1 is covered by the script above; use these commands if you prefer manual steps.
 
 ## Phase 2 — extract (Scopus)
 
