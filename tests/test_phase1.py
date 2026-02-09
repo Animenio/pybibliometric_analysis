@@ -1,11 +1,7 @@
 from collections import namedtuple
-from pathlib import Path
-import sys
 
 import pandas as pd
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pybibliometric_analysis import settings
 from pybibliometric_analysis.extract_scopus import run_extract
@@ -72,6 +68,7 @@ def test_no_overwrite_raw(tmp_path, monkeypatch):
             config_path=tmp_path / "search.yaml",
             pybliometrics_config_dir=tmp_path / "config",
             scopus_api_key_file=tmp_path / "scopus_api_key.txt",
+            inst_token_file=None,
             view=None,
             force_slicing=False,
             base_dir=tmp_path,
@@ -127,16 +124,8 @@ def test_extract_uses_mocked_scopus(monkeypatch, tmp_path):
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        pd.DataFrame,
-        "to_parquet",
-        lambda self, path, index=False, **_kwargs: self.to_csv(path, index=index),
-        raising=True,
-    )
-    monkeypatch.setattr(
-        pd,
-        "read_parquet",
-        lambda path, **_kwargs: pd.read_csv(path),
-        raising=True,
+        "pybibliometric_analysis.extract_scopus.write_table",
+        lambda df, path: df.to_csv(path.with_suffix(".csv"), index=False) or path.with_suffix(".csv"),
     )
 
     run_extract(
@@ -144,14 +133,15 @@ def test_extract_uses_mocked_scopus(monkeypatch, tmp_path):
         config_path=config_path,
         pybliometrics_config_dir=tmp_path / "config",
         scopus_api_key_file=api_key_file,
+        inst_token_file=None,
         view=None,
         force_slicing=False,
         base_dir=tmp_path,
     )
 
-    raw_path = tmp_path / "data" / "raw" / "scopus_search_20200101T000000Z.parquet"
+    raw_path = tmp_path / "data" / "raw" / "scopus_search_20200101T000000Z.csv"
     assert raw_path.exists()
-    df = pd.read_parquet(raw_path)
+    df = pd.read_csv(raw_path)
     assert not df.empty
 
 
@@ -178,3 +168,10 @@ def test_load_scopus_api_key_env_overrides_file(tmp_path, monkeypatch):
     api_key_file.write_text("FILE_KEY\n", encoding="utf-8")
     monkeypatch.setenv("SCOPUS_API_KEY", "ENV_KEY")
     assert settings.load_scopus_api_key(api_key_file) == "ENV_KEY"
+
+
+def test_load_inst_token_env_fallback(tmp_path, monkeypatch):
+    inst_token_file = tmp_path / "inst_token.txt"
+    inst_token_file.write_text("FILE_TOKEN\n", encoding="utf-8")
+    monkeypatch.setenv("INSTTOKEN", "ENV_TOKEN")
+    assert settings.load_scopus_insttoken(inst_token_file) == "ENV_TOKEN"
