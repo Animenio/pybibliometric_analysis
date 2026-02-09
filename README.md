@@ -72,6 +72,47 @@ python -m pybibliometric_analysis analyze --run-id <RUN_ID> --figures
 
 Use `config/search.yaml` for a minimal query or `config/search_trend.yaml` for journal articles.
 
+## Phase 1 → Phase 2 (scripted, stop on failure)
+
+```bash
+set -euo pipefail
+
+echo "=== PHASE 1: sanity ==="
+
+python --version
+python -m pip --version
+
+python -m pip install -e ".[dev,parquet]"   # recommended (parquet)
+# python -m pip install -e ".[dev]"         # minimal (CSV fallback)
+
+pytest -q
+
+python -m pybibliometric_analysis extract --help
+python -m pybibliometric_analysis clean --help
+python -m pybibliometric_analysis analyze --help
+
+git status -sb
+
+echo "✅ PHASE 1 OK"
+
+echo "=== PHASE 2: extract (smoke) ==="
+
+: "${SCOPUS_API_KEY:?Set SCOPUS_API_KEY in your environment}"
+# export INST_TOKEN="..."  # optional
+
+RUN_ID="smoke-$(date -u +%Y%m%dT%H%M%SZ)"
+
+python -m pybibliometric_analysis extract \
+  --run-id "$RUN_ID" \
+  --config config/search_trend.yaml \
+  --pybliometrics-config-dir config/pybliometrics
+
+echo "✅ PHASE 2 OK (smoke)"
+echo "RUN_ID=$RUN_ID"
+```
+
+If `config/search_trend.yaml` is not available, use `config/search.yaml` instead.
+
 ## Phase 1 — sanity
 
 ```bash
@@ -113,6 +154,29 @@ python -m pybibliometric_analysis analyze --run-id trend-001 --figures
 ```
 
 Figures are optional; if matplotlib is missing, analysis still runs (no crash).
+
+## Phase 2 verification (quick manifest check)
+
+```bash
+RUN_ID="smoke-YYYYMMDDTHHMMSSZ"
+
+ls -lah data/raw | tail -n 5
+ls -lah outputs/methods | tail -n 5
+ls -lah logs | tail -n 5
+
+python - <<'PY'
+import json, pathlib, sys
+run_id = sys.argv[1]
+m = pathlib.Path("outputs/methods") / f"search_manifest_{run_id}.json"
+print("manifest:", m)
+data = json.loads(m.read_text(encoding="utf-8"))
+print("database:", data.get("database"))
+print("run_id:", data.get("run_id"))
+print("n_records_downloaded:", data.get("n_records_downloaded"))
+print("strategy_used:", data.get("strategy_used"))
+print("columns_present (n):", len(data.get("columns_present") or []))
+PY "$RUN_ID"
+```
 
 ## Output structure
 
