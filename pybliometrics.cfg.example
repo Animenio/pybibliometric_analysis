@@ -1,0 +1,20 @@
+[Directories]
+AbstractRetrieval = .cache/pybliometrics/abstractretrieval
+AffiliationRetrieval = .cache/pybliometrics/affiliationretrieval
+AffiliationSearch = .cache/pybliometrics/affiliationsearch
+AuthorRetrieval = .cache/pybliometrics/authorretrieval
+AuthorSearch = .cache/pybliometrics/authorsearch
+CitationOverview = .cache/pybliometrics/citationoverview
+PlumXMetrics = .cache/pybliometrics/plumxmetrics
+ScopusSearch = .cache/pybliometrics/scopussearch
+SerialTitleSearch = .cache/pybliometrics/serialtitlesearch
+SerialTitleISSN = .cache/pybliometrics/serialtitleissn
+SubjectClassifications = .cache/pybliometrics/subjectclassifications
+
+[Authentication]
+APIKey = YOUR_SCOPUS_API_KEY
+InstToken = YOUR_INST_TOKEN_HERE
+
+[Requests]
+Timeout = 20
+Retries = 5
