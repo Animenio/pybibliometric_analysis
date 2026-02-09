@@ -62,6 +62,8 @@ python -m pybibliometric_analysis extract \
   --inst-token-file config/inst_token.txt
 ```
 
+Never commit files containing real credentials.
+
 The extractor writes `config/pybliometrics/pybliometrics.cfg` automatically if missing and
 `SCOPUS_API_KEY` is present. If you want to manage it manually, copy the example:
 
@@ -75,27 +77,26 @@ cp config/pybliometrics/pybliometrics.cfg.example config/pybliometrics/pybliomet
 set -euo pipefail
 
 echo "=== PHASE 1: sanity ==="
-
 python --version
 python -m pip --version
 
+# Install (choose one)
 python -m pip install -e ".[dev,parquet]"   # recommended (parquet)
-# python -m pip install -e ".[dev]"         # minimal (CSV fallback)
+# python -m pip install -e ".[dev]"         # minimal
 
 pytest -q
 
+# CLI availability checks (keep only commands that exist in this repo)
 python -m pybibliometric_analysis extract --help
 python -m pybibliometric_analysis clean --help
 python -m pybibliometric_analysis analyze --help
 
 git status -sb
-
 echo "✅ PHASE 1 OK"
 
 echo "=== PHASE 2: extract (smoke) ==="
-
 : "${SCOPUS_API_KEY:?Set SCOPUS_API_KEY in your environment}"
-# export INST_TOKEN="..."  # optional
+# export INST_TOKEN="..."  # optional (institution token)
 
 if [ -f config/search_trend.yaml ]; then
   CONFIG_PATH=config/search_trend.yaml
@@ -168,6 +169,7 @@ Figures are optional; if matplotlib is missing, analysis still runs (no crash).
 RUN_ID="smoke-YYYYMMDDTHHMMSSZ"
 python - "$RUN_ID" <<'PY'
 import json, pathlib, sys
+
 run_id = sys.argv[1]
 m = pathlib.Path("outputs/methods") / f"search_manifest_{run_id}.json"
 if not m.exists():
