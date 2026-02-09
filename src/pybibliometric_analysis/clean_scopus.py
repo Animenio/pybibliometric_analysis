@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from pybibliometric_analysis.io_utils import detect_parquet_engine, read_table, write_table
+from pybibliometric_analysis.io_utils import read_table, write_json, write_table
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -95,7 +94,7 @@ def _fill_author_names(df: "pd.DataFrame") -> "pd.DataFrame":
 
 def _normalize_journal(df: "pd.DataFrame") -> "pd.DataFrame":
     col = None
-    for candidate in ("publicationName", "journal", "sourceTitle"):
+    for candidate in ("prism:publicationName", "publicationName", "journal", "sourceTitle"):
         if candidate in df.columns:
             col = candidate
             break
@@ -129,17 +128,17 @@ def run_clean(
     log_path = base_dir / "logs" / f"clean_{run_id or 'latest'}.log"
     logger = setup_logging(log_path)
 
+    if not run_id:
+        raise ValueError("--run-id is required for clean.")
+
     if input_path:
         raw_path = input_path
-    elif run_id:
-        raw_path = base_dir / "data" / "raw" / f"scopus_search_{run_id}.parquet"
         if not raw_path.exists():
-            raw_path = raw_path.with_suffix(".csv")
+            raise FileNotFoundError(f"Raw file not found: {raw_path}")
     else:
-        raw_path = _latest_raw_file(base_dir)
-
-    if not raw_path.exists():
-        raise FileNotFoundError(f"Raw file not found: {raw_path}")
+        raw_path = base_dir / "data" / "raw" / f"scopus_search_{run_id}"
+        if not (raw_path.with_suffix(".parquet").exists() or raw_path.with_suffix(".csv").exists()):
+            raise FileNotFoundError(f"Raw file not found for run_id={run_id}: {raw_path}")
 
     resolved_run_id = run_id or _extract_run_id(raw_path)
     logger.info("Cleaning run_id=%s input=%s", resolved_run_id, raw_path)
@@ -155,14 +154,19 @@ def run_clean(
     df = _fill_author_names(df)
     df = _normalize_journal(df)
 
-    output_base = base_dir / "data" / "processed" / f"scopus_clean_{resolved_run_id}.parquet"
+    output_base = base_dir / "data" / "processed" / f"scopus_clean_{resolved_run_id}"
+
+    parquet_path = output_base.with_suffix(".parquet")
+    csv_path = output_base.with_suffix(".csv")
+    if (parquet_path.exists() or csv_path.exists()) and not force:
+        raise FileExistsError(f"Output already exists: {parquet_path} or {csv_path}")
+
     if write_format == "csv":
-        output_base = output_base.with_suffix(".csv")
-
-    if output_base.exists() and not force:
-        raise FileExistsError(f"Output already exists: {output_base}")
-
-    cleaned_path = write_table(df, output_base)
+        cleaned_path = write_table(df, output_base.with_suffix(".csv"))
+    elif write_format == "parquet":
+        cleaned_path = write_table(df, output_base.with_suffix(".parquet"))
+    else:
+        cleaned_path = write_table(df, output_base)
 
     analysis_dir = base_dir / "outputs" / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
@@ -177,7 +181,11 @@ def run_clean(
     pubs_by_year.to_csv(analysis_dir / f"pubs_by_year_{resolved_run_id}.csv", index=False)
 
     journal_col = next(
-        (c for c in ("publicationName", "journal", "sourceTitle") if c in df.columns),
+        (
+            c
+            for c in ("prism:publicationName", "publicationName", "journal", "sourceTitle")
+            if c in df.columns
+        ),
         None,
     )
     if journal_col:
@@ -212,18 +220,47 @@ def run_clean(
         logger.warning("Keyword column not found; keyword_freq will be empty.")
     keywords.to_csv(analysis_dir / f"keyword_freq_{resolved_run_id}.csv", index=False)
 
+    derived_fields = ["pub_year", "author_names"]
+    coverage = {
+        "pub_year": _coverage_stats(df, "pub_year"),
+        "journal": _coverage_stats(df, journal_col)
+        if journal_col
+        else {"n_nonnull": 0, "n_total": len(df), "pct_nonnull": 0.0},
+        "authors": _coverage_stats(df, "author_names"),
+        "keywords": _coverage_stats(df, keyword_col)
+        if keyword_col
+        else {"n_nonnull": 0, "n_total": len(df), "pct_nonnull": 0.0},
+    }
     manifest = {
-        "timestamp_iso": datetime.now(timezone.utc).isoformat(),
+        "schema_version": "1.0",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "run_id": resolved_run_id,
         "input_path": str(raw_path),
-        "output_path": str(cleaned_path),
-        "parquet_engine": detect_parquet_engine(),
-        "rows_input": original_rows,
-        "rows_output": deduped_rows,
-        "deduplicated": original_rows - deduped_rows,
+        "output_path": cleaned_path["path"],
+        "derived_fields": derived_fields,
+        "duplicates_removed": original_rows - deduped_rows,
+        "coverage": coverage,
+        "output_tables": {
+            "pubs_by_year": str(analysis_dir / f"pubs_by_year_{resolved_run_id}.csv"),
+            "top_journals": str(analysis_dir / f"top_journals_{resolved_run_id}.csv"),
+            "top_authors": str(analysis_dir / f"top_authors_{resolved_run_id}.csv"),
+            "keyword_freq": str(analysis_dir / f"keyword_freq_{resolved_run_id}.csv"),
+        },
+        "notes": [],
     }
+    if not keyword_col:
+        manifest["notes"].append("Keyword column not found; keyword_freq is empty.")
     manifest_path = base_dir / "outputs" / "methods" / f"cleaning_manifest_{resolved_run_id}.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    write_json(manifest, manifest_path)
 
-    logger.info("Wrote cleaned data to %s", cleaned_path)
+    logger.info("Wrote cleaned data to %s", cleaned_path["path"])
+
+
+def _coverage_stats(df: "pd.DataFrame", column: Optional[str]) -> dict:
+    if not column or column not in df.columns:
+        return {"n_nonnull": 0, "n_total": len(df), "pct_nonnull": 0.0}
+    n_total = len(df)
+    n_nonnull = int(df[column].notna().sum())
+    pct_nonnull = (n_nonnull / n_total) if n_total else 0.0
+    return {"n_nonnull": n_nonnull, "n_total": n_total, "pct_nonnull": pct_nonnull}
