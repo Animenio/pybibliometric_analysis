@@ -10,23 +10,11 @@ if TYPE_CHECKING:
 
 
 def detect_parquet_support() -> bool:
-    """Return True only when a parquet engine is importable.
-
-    We treat *any* import-time exception as lack of support, since ABI issues can
-    raise non-ImportError exceptions.
-    """
-
     try:
         import pyarrow  # noqa: F401
-    except Exception:
+    except ImportError:
         return False
     return True
-
-
-def _lazy_pandas():
-    import pandas as pd
-
-    return pd
 
 
 def ensure_dir(path: Path) -> None:
@@ -37,87 +25,75 @@ def ensure_parent_dir(path: Path) -> None:
     ensure_dir(path.parent)
 
 
-def write_table(base_path: Path, df: "pd.DataFrame", preferred_format: str = "parquet") -> dict:
-    """Write a table to parquet or csv with automatic fallback.
+def _lazy_pandas():
+    import pandas as pd
 
-    Args:
-        base_path: Path without suffix (preferred). If a suffix is provided, it is ignored.
-        df: DataFrame to write.
-        preferred_format: "parquet" (default) or "csv".
+    return pd
 
-    Returns:
-        Metadata dict with at least: {"path": str, "format": "csv"|"parquet"}.
-    """
 
+def write_table(df: "pd.DataFrame", path_base: Path, prefer_parquet: bool = True) -> dict:
     logger = logging.getLogger("pybibliometric_analysis")
-    base = base_path
-    if base.suffix in {".parquet", ".csv"}:
-        base = base.with_suffix("")
+    forced_suffix = path_base.suffix if path_base.suffix in {".parquet", ".csv"} else None
+    base = _normalize_base_path(path_base)
     ensure_parent_dir(base)
 
-    preferred_format = preferred_format.lower()
-    if preferred_format not in {"parquet", "csv"}:
-        raise ValueError("preferred_format must be 'parquet' or 'csv'")
+    if forced_suffix == ".csv":
+        csv_path = base.with_suffix(".csv")
+        df.to_csv(csv_path, index=False)
+        return {"path": str(csv_path), "format": "csv"}
 
-    if preferred_format == "parquet" and detect_parquet_support():
+    if not prefer_parquet or not detect_parquet_support():
+        csv_path = base.with_suffix(".csv")
+        logger.warning("Parquet engine unavailable; wrote CSV instead: %s", csv_path)
+        df.to_csv(csv_path, index=False)
+        return {"path": str(csv_path), "format": "csv"}
+
+    try:
         parquet_path = base.with_suffix(".parquet")
-        try:
-            df.to_parquet(parquet_path, index=False, engine="pyarrow")
-            return {"path": str(parquet_path), "format": "parquet"}
-        except Exception as exc:
-            logger.warning(
-                "Parquet write failed (%s). Falling back to CSV.", exc.__class__.__name__
-            )
-
-    csv_path = base.with_suffix(".csv")
-    df.to_csv(csv_path, index=False)
-    return {"path": str(csv_path), "format": "csv"}
+        df.to_parquet(parquet_path, index=False, engine="pyarrow")
+        return {"path": str(parquet_path), "format": "parquet"}
+    except (ImportError, ValueError, AttributeError) as exc:
+        csv_path = base.with_suffix(".csv")
+        logger.warning(
+            "Parquet write failed (%s). Wrote CSV instead: %s", exc.__class__.__name__, csv_path
+        )
+        df.to_csv(csv_path, index=False)
+        return {"path": str(csv_path), "format": "csv"}
 
 
-def read_table(path_or_base: Path) -> "pd.DataFrame":
-    """Read a table from parquet/csv.
-
-    - If a suffix is provided (.csv/.parquet), read exactly that file.
-    - If no suffix is provided, try {base}.parquet then {base}.csv.
-    """
-
+def read_table(path_base: Path) -> "pd.DataFrame":
     pd = _lazy_pandas()
     logger = logging.getLogger("pybibliometric_analysis")
+    path = _normalize_base_path(path_base)
 
-    if path_or_base.suffix in {".csv", ".parquet"}:
-        if not path_or_base.exists():
-            raise FileNotFoundError(f"File not found: {path_or_base}")
-        if path_or_base.suffix == ".csv":
-            return pd.read_csv(path_or_base)
+    if path.suffix == ".csv" and path.exists():
+        return pd.read_csv(path)
+
+    if path.suffix == ".parquet" and path.exists():
         if not detect_parquet_support():
-            raise RuntimeError("Parquet engine unavailable; install the 'parquet' extra.")
-        return pd.read_parquet(path_or_base, engine="pyarrow")
-
-    parquet_path = path_or_base.with_suffix(".parquet")
-    csv_path = path_or_base.with_suffix(".csv")
-
-    if parquet_path.exists():
-        if not detect_parquet_support():
+            csv_path = path.with_suffix(".csv")
             if csv_path.exists():
                 logger.warning("Parquet engine unavailable; reading CSV instead: %s", csv_path)
                 return pd.read_csv(csv_path)
             raise RuntimeError("Parquet engine unavailable and no CSV fallback found.")
-        try:
-            return pd.read_parquet(parquet_path, engine="pyarrow")
-        except Exception as exc:
-            if csv_path.exists():
-                logger.warning(
-                    "Parquet read failed (%s). Reading CSV instead: %s",
-                    exc.__class__.__name__,
-                    csv_path,
-                )
-                return pd.read_csv(csv_path)
-            raise
+        return pd.read_parquet(path, engine="pyarrow")
 
+    if path.suffix:
+        raise FileNotFoundError(f"File not found: {path}")
+
+    parquet_path = path.with_suffix(".parquet")
+    csv_path = path.with_suffix(".csv")
+    if parquet_path.exists():
+        if not detect_parquet_support() and csv_path.exists():
+            logger.warning("Parquet engine unavailable; reading CSV instead: %s", csv_path)
+            return pd.read_csv(csv_path)
+        if not detect_parquet_support():
+            raise RuntimeError("Parquet engine unavailable and no CSV fallback found.")
+        return pd.read_parquet(parquet_path, engine="pyarrow")
     if csv_path.exists():
         return pd.read_csv(csv_path)
 
-    raise FileNotFoundError(f"No parquet/csv file found for base path: {path_or_base}")
+    raise FileNotFoundError(f"No parquet/csv file found for base path: {path}")
 
 
 def write_json(data: Any, path: Path) -> None:
@@ -127,3 +103,9 @@ def write_json(data: Any, path: Path) -> None:
 
 def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _normalize_base_path(path: Path) -> Path:
+    if path.suffix in {".parquet", ".csv"}:
+        return path.with_suffix("")
+    return path

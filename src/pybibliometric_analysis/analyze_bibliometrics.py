@@ -221,7 +221,7 @@ def run_analyze(
     _lazy_pandas().DataFrame([cagr_summary]).to_csv(cagr_path, index=False)
 
     analysis_manifest = {
-        "schema_version": 1,
+        "schema_version": "1.0",
         "timestamp_utc": cagr_summary["timestamp_utc"],
         "run_id": resolved_run_id,
         "period": {

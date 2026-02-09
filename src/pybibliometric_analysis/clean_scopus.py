@@ -162,11 +162,11 @@ def run_clean(
         raise FileExistsError(f"Output already exists: {parquet_path} or {csv_path}")
 
     if write_format == "csv":
-        cleaned_path = write_table(output_base, df, preferred_format="csv")
+        cleaned_path = write_table(df, output_base.with_suffix(".csv"))
     elif write_format == "parquet":
-        cleaned_path = write_table(output_base, df, preferred_format="parquet")
+        cleaned_path = write_table(df, output_base.with_suffix(".parquet"))
     else:
-        cleaned_path = write_table(output_base, df, preferred_format="parquet")
+        cleaned_path = write_table(df, output_base)
 
     analysis_dir = base_dir / "outputs" / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
@@ -209,8 +209,10 @@ def run_clean(
         logger.warning("Author names missing; top_authors will be empty.")
     authors.to_csv(analysis_dir / f"top_authors_{resolved_run_id}.csv", index=False)
 
-    keyword_candidates = ("authkeywords", "keywords", "author_keywords")
-    keyword_col = next((c for c in keyword_candidates if c in df.columns), None)
+    keyword_col = next(
+        (c for c in ("authkeywords", "keywords", "author_keywords") if c in df.columns),
+        None,
+    )
     if keyword_col:
         keywords = _split_and_count(df[keyword_col])
     else:
@@ -230,7 +232,7 @@ def run_clean(
         else {"n_nonnull": 0, "n_total": len(df), "pct_nonnull": 0.0},
     }
     manifest = {
-        "schema_version": 1,
+        "schema_version": "1.0",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "run_id": resolved_run_id,
         "input_path": str(raw_path),
