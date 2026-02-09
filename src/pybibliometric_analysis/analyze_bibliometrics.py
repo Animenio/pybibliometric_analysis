@@ -233,6 +233,7 @@ def run_analyze(
             "yoy_growth": str(yoy_path),
             "cagr": str(cagr_path),
         },
+        "output_format": "csv",
         "yoy_pct_units": "percent",
     }
     (base_dir / "outputs" / "methods").mkdir(parents=True, exist_ok=True)

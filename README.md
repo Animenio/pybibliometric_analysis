@@ -134,6 +134,15 @@ else
   exit 1
 fi
 
+if [ -f config/search_trend.yaml ]; then
+  CONFIG_PATH=config/search_trend.yaml
+elif [ -f config/search.yaml ]; then
+  CONFIG_PATH=config/search.yaml
+else
+  echo "ERROR: no config/search_trend.yaml or config/search.yaml found" >&2
+  exit 1
+fi
+
 RUN_ID="smoke-$(date -u +%Y%m%dT%H%M%SZ)"
 
 echo "RUN_ID=$RUN_ID"
@@ -173,7 +182,8 @@ If `--run-id` is omitted, the extractor prints the auto-generated value as `RUN_
 
 If your account is not a subscriber, set `subscriber_mode: false` and `use_cursor_preferred: false`
 in the config or use `--force-slicing` to avoid cursor mode. Slicing requires either
-`start_year`/`end_year` or `max_years_back` in the YAML config.
+`start_year`/`end_year` or `max_years_back` in the YAML config (the bundled configs use
+1996–2025 with `max_years_back: 30`).
 
 ## Phase 3 — clean
 
@@ -210,6 +220,7 @@ print("timestamp_utc:", data.get("timestamp_utc"))
 print("n_results_estimated:", data.get("n_results_estimated"))
 print("n_records_downloaded:", data.get("n_records_downloaded"))
 print("strategy_used:", data.get("strategy_used"))
+print("output_format:", data.get("output_format"))
 cols = data.get("columns_present") or []
 print("columns_present (n):", len(cols))
 raw_parquet = pathlib.Path("data/raw") / f"scopus_search_{run_id}.parquet"

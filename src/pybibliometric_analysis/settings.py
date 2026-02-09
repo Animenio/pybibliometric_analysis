@@ -49,13 +49,17 @@ def generate_run_id(prefix: str = "smoke") -> str:
 
 
 def _read_first_token(path: Path) -> Optional[str]:
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = load_text_file(path).splitlines()
     for line in lines:
         cleaned = line.split("#", 1)[0].strip()
         if not cleaned:
             continue
         return cleaned
     return None
+
+
+def load_text_file(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
 
 
 def load_scopus_api_key(api_key_file: Optional[Path]) -> Optional[str]:
