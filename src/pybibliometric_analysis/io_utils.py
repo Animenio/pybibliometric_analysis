@@ -21,6 +21,14 @@ def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def detect_parquet_support() -> bool:
+    return detect_parquet_engine() is not None
+
+
+def ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
 def ensure_parent_dir(path: Path) -> None:
     ensure_dir(path.parent)
 

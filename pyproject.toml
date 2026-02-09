@@ -7,7 +7,7 @@ name = "pybibliometric_analysis"
 version = "0.1.0"
 description = "Scopus extraction utilities for bibliometric analysis."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Project contributors" }]
 
 dependencies = [
