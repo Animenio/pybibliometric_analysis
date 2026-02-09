@@ -83,7 +83,7 @@ python -m pip --version
 
 # Install (choose one)
 python -m pip install -e ".[dev,parquet]"   # recommended (parquet)
-# python -m pip install -e ".[dev]"         # minimal (CSV fallback)
+# python -m pip install -e ".[dev]"         # minimal
 
 pytest -q
 
