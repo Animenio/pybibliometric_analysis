@@ -7,11 +7,14 @@ __pycache__/
 .ruff_cache/
 build/
 dist/
-data/
+data/raw/
+data/processed/
 outputs/
 logs/
-data/**/*.parquet
-data/**/*.csv
+data/raw/**/*.parquet
+data/raw/**/*.csv
+data/processed/**/*.parquet
+data/processed/**/*.csv
 outputs/**/*.parquet
 outputs/**/*.csv
 logs/**/*.parquet
