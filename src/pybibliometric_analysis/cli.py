@@ -11,7 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--run-id",
         dest="run_id",
         default=None,
-        help="Run identifier (defaults to UTC timestamp)",
+        help="Run identifier (defaults to smoke-<UTC timestamp>)",
     )
     extract_parser.add_argument(
         "--config",
@@ -50,9 +50,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Force year slicing strategy",
     )
+    extract_parser.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="Validate config/credentials and write a dry-run manifest (no network)",
+    )
 
     clean_parser = subparsers.add_parser("clean", help="Clean and normalize Scopus data")
-    clean_parser.add_argument("--run-id", dest="run_id", default=None, help="Run identifier")
+    clean_parser.add_argument("--run-id", dest="run_id", required=True, help="Run identifier")
     clean_parser.add_argument(
         "--base-dir",
         dest="base_dir",
@@ -80,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     analyze_parser = subparsers.add_parser("analyze", help="Analyze cleaned bibliometrics data")
-    analyze_parser.add_argument("--run-id", dest="run_id", default=None, help="Run identifier")
+    analyze_parser.add_argument("--run-id", dest="run_id", required=True, help="Run identifier")
     analyze_parser.add_argument(
         "--base-dir",
         dest="base_dir",
@@ -121,6 +127,8 @@ def main() -> None:
         from pybibliometric_analysis.extract_scopus import run_extract
 
         run_id = args.run_id or generate_run_id()
+        if args.run_id is None:
+            print(f"RUN_ID={run_id}")
         run_extract(
             run_id=run_id,
             config_path=Path(args.config_path),
@@ -129,6 +137,7 @@ def main() -> None:
             inst_token_file=Path(args.inst_token_file),
             view=args.view,
             force_slicing=args.force_slicing,
+            dry_run=args.dry_run,
         )
     elif args.command == "clean":
         from pybibliometric_analysis.clean_scopus import run_clean
