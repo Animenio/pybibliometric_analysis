@@ -79,6 +79,7 @@ echo "=== PHASE 1: sanity ==="
 python --version
 python -m pip --version
 
+echo "Installing editable package for tests/CLI..."
 python -m pip install -e ".[dev,parquet]"   # recommended (parquet)
 # python -m pip install -e ".[dev]"         # minimal (CSV fallback)
 
