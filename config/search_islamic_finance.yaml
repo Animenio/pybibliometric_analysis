@@ -1,10 +1,19 @@
-query: 'TITLE-ABS-KEY("islamic finance" OR "islamic banking" OR sukuk OR takaful)'
+query: >-
+  TITLE-ABS-KEY("islamic finance" OR "islamic banking" OR sukuk OR takaful)
+  AND PUBYEAR > 1982
+  AND PUBYEAR < 2026
+  AND (
+    LIMIT-TO(SUBJAREA, "ECON")
+    OR LIMIT-TO(SUBJAREA, "BUSI")
+    OR LIMIT-TO(SUBJAREA, "SOCI")
+  )
+  AND LIMIT-TO(LANGUAGE, "English")
 database: 'Scopus'
-notes: 'Broader Islamic finance query (journals only)'
+notes: 'Islamic finance query filtered to 1983–2025, ECON/BUSI/SOCI, English only'
 use_cursor_preferred: true
 subscriber_mode: false
-start_year: 2002
+start_year: 1983
 end_year: 2025
-max_years_back: 30
+max_years_back: 43
 document_types:
   - ar
