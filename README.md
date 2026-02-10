@@ -167,6 +167,30 @@ python -m pybibliometric_analysis analyze --run-id trend-001 --figures
 
 Figures are optional; if matplotlib is missing, analysis still runs (no crash).
 
+## Extended analysis directly from Scopus CSV
+
+If you exported `scopus_db.csv` from Scopus (or copied it from Drive), you can run a richer pipeline in one command (dedup + KPI + keywords + regional bubble chart + ZIP package):
+
+```bash
+python -m pybibliometric_analysis analyze-scopus-csv \
+  --run-id islamic-finance-001 \
+  --csv-path /path/to/scopus_db.csv \
+  --base-dir . \
+  --min-year 1983 \
+  --max-year 2025
+```
+
+Outputs are written under:
+
+- `outputs/full_analysis/<RUN_ID>/figures`
+- `outputs/full_analysis/<RUN_ID>/tables`
+- `outputs/full_analysis/<RUN_ID>/networks`
+- `outputs/full_analysis/<RUN_ID>/meta`
+- `outputs/full_analysis/<RUN_ID>.zip`
+
+The command is designed as a local alternative to the Colab workflow for end-to-end bibliometric reporting.
+
+
 ## Phase 2 verification (manifest check)
 
 ```bash
