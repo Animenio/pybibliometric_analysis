@@ -57,14 +57,18 @@ def run_pipeline(run_id: str) -> None:
                 "config/pybliometrics",
             ],
             check=True,
+            capture_output=True,
+            text=True,
         )
     except subprocess.CalledProcessError as exc:
-        message = str(exc)
-        if "Scopus400Error" in message or "maximum number allowed" in message:
+        stderr_text = (exc.stderr or "") + "\n" + (exc.output or "")
+        if "Scopus400Error" in stderr_text or "maximum number allowed" in stderr_text:
             print("Hit Scopus service limit; retrying with year chunks.")
             chunk_run_ids = run_extract_chunked(run_id)
             combine_raw_chunks(run_id, chunk_run_ids)
         else:
+            if stderr_text.strip():
+                print(stderr_text)
             raise
     subprocess.run(
         ["python", "-m", "pybibliometric_analysis", "clean", "--run-id", run_id],
