@@ -114,6 +114,26 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.set_defaults(figures=True)
     analyze_parser.add_argument("--min-year", dest="min_year", type=int, default=None)
     analyze_parser.add_argument("--max-year", dest="max_year", type=int, default=None)
+
+    full_parser = subparsers.add_parser(
+        "analyze-scopus-csv",
+        help="Run an extended bibliometric analysis directly on a Scopus CSV export",
+    )
+    full_parser.add_argument("--run-id", dest="run_id", required=True, help="Run identifier")
+    full_parser.add_argument(
+        "--csv-path",
+        dest="csv_path",
+        required=True,
+        help="Path to Scopus CSV export (e.g. scopus_db.csv)",
+    )
+    full_parser.add_argument(
+        "--base-dir",
+        dest="base_dir",
+        default=".",
+        help="Base directory for outputs/logs",
+    )
+    full_parser.add_argument("--min-year", dest="min_year", type=int, default=1983)
+    full_parser.add_argument("--max-year", dest="max_year", type=int, default=2025)
     return parser
 
 
@@ -157,6 +177,16 @@ def main() -> None:
             base_dir=Path(args.base_dir),
             input_path=Path(args.input_path) if args.input_path else None,
             figures=args.figures,
+            min_year=args.min_year,
+            max_year=args.max_year,
+        )
+    elif args.command == "analyze-scopus-csv":
+        from pybibliometric_analysis.scopus_full_analysis import run_full_scopus_csv_analysis
+
+        run_full_scopus_csv_analysis(
+            run_id=args.run_id,
+            csv_path=Path(args.csv_path),
+            base_dir=Path(args.base_dir),
             min_year=args.min_year,
             max_year=args.max_year,
         )
