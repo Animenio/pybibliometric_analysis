@@ -74,6 +74,8 @@ def _derive_pub_year(df: "pd.DataFrame") -> "pd.DataFrame":
         cover_years = df[cover_col].apply(_coerce_year)
     else:
         cover_years = pd.Series([None] * len(df))
+    df["pub_year"] = pd.to_numeric(df["pub_year"], errors="coerce")
+    cover_years = pd.to_numeric(cover_years, errors="coerce")
     df["pub_year"] = df["pub_year"].fillna(cover_years)
     return df
 

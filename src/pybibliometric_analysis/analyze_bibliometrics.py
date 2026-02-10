@@ -80,6 +80,7 @@ def _compute_yoy(pubs_by_year: "pd.DataFrame") -> "pd.DataFrame":
     pubs_by_year.loc[mask, "yoy_pct"] = (
         (pubs_by_year.loc[mask, "yoy_abs"] / pubs_by_year.loc[mask, "prev_count"]) * 100
     )
+    pubs_by_year["yoy_pct"] = pd.to_numeric(pubs_by_year["yoy_pct"], errors="coerce")
     return pubs_by_year.rename(columns={"pub_year": "year"})[
         ["year", "count", "yoy_abs", "yoy_pct"]
     ]
@@ -140,6 +141,9 @@ def _maybe_plot(
     if not find_spec("matplotlib"):
         logger.warning("matplotlib not installed; skipping figure generation.")
         return
+    if pubs_by_year.empty:
+        logger.warning("No publications-by-year data; skipping figures.")
+        return
     plt = import_module("matplotlib.pyplot")
     figures_dir = base_dir / "outputs" / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
@@ -153,8 +157,16 @@ def _maybe_plot(
     plt.savefig(figures_dir / f"pubs_by_year_{run_id}.png")
     plt.close()
 
+    yoy_plot = yoy.copy()
+    pd = _lazy_pandas()
+    yoy_plot["yoy_pct"] = pd.to_numeric(yoy_plot["yoy_pct"], errors="coerce")
+    yoy_plot = yoy_plot.dropna(subset=["year", "yoy_pct"])
+    if yoy_plot.empty:
+        logger.warning("No YoY data available for plotting; skipping YoY figure.")
+        return
+
     plt.figure()
-    plt.plot(yoy["year"], yoy["yoy_pct"], marker="o")
+    plt.plot(yoy_plot["year"], yoy_plot["yoy_pct"], marker="o")
     plt.title("Year-over-Year Growth")
     plt.xlabel("Year")
     plt.ylabel("YoY %")
