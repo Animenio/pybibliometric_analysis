@@ -1,8 +1,8 @@
-query: 'ALL(islamic AND finance)'
+query: 'TITLE-ABS-KEY("islamic finance") AND PUBYEAR > 1978 AND PUBYEAR < 2026 AND (LIMIT-TO(SUBJAREA, "ECON") OR LIMIT-TO(SUBJAREA, "BUSI") OR LIMIT-TO(SUBJAREA, "SOCI")) AND (LIMIT-TO(LANGUAGE, "English"))'
 database: 'Scopus'
-notes: 'All fields; all source types; all document types; years 2002–2025'
+notes: 'English; subject areas ECON/BUSI/SOCI; years 1979-2025'
 use_cursor_preferred: true
 subscriber_mode: false
-start_year: 2002
+start_year: 1979
 end_year: 2025
-max_years_back: 30
+max_years_back: 48

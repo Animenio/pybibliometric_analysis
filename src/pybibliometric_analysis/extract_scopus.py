@@ -43,6 +43,15 @@ def _lazy_pandas():
     return pd
 
 
+def _is_query_limit_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "more than 5000" in message
+        or "5000 entries" in message
+        or "fails to return more than 5000" in message
+    )
+
+
 @dataclass
 class ExtractPaths:
     raw_path: Path
@@ -114,16 +123,27 @@ def run_extract(
         logger=logger,
     )
 
-    estimate_search = retry_scopus_search(
-        config.query,
-        view=view,
-        download=False,
-        subscriber=config.subscriber_mode,
-    )
-    n_results = estimate_search.get_results_size()
-    logger.info("Estimated %s results", n_results)
 
     threshold = 5000
+    try:
+        estimate_search = retry_scopus_search(
+            config.query,
+            view=view,
+            download=False,
+            subscriber=config.subscriber_mode,
+        )
+        n_results = estimate_search.get_results_size()
+        logger.info("Estimated %s results", n_results)
+    except Exception as exc:
+        if force_slicing and _is_query_limit_error(exc):
+            logger.warning(
+                "Estimate failed due to result limit; proceeding with slicing. Error=%s",
+                exc,
+            )
+            n_results = threshold + 1
+        else:
+            raise
+
     if force_slicing:
         planned_strategy = "slicing"
     elif n_results > threshold and config.subscriber_mode and config.use_cursor_preferred:
