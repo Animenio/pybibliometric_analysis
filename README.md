@@ -135,6 +135,19 @@ python -m pybibliometric_analysis extract \
   --inst-token-file config/inst_token.txt
 ```
 
+For your Islamic Finance dataset with strict Scopus filters (1983–2025, subject areas
+Economics/Econometrics/Finance + Business/Management/Accounting + Social Sciences,
+English only), use:
+
+```bash
+python -m pybibliometric_analysis extract \
+  --run-id islamic-finance-1983-2025 \
+  --config config/search_islamic_finance.yaml \
+  --pybliometrics-config-dir config/pybliometrics \
+  --scopus-api-key-file config/scopus_api_key.txt \
+  --inst-token-file config/inst_token.txt
+```
+
 Dry-run (no network; validates config/credentials and writes a manifest):
 
 ```bash
